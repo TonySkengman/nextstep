@@ -1,17 +1,8 @@
-# Nextstep
+# nextstep
 
-A local dashboard for tracking job and internship applications. The top cards summarize the pipeline. The board shows Interested, Applied, Follow Up, In Contact, Interview, and Completed.
+A Kanban dashboard for tracking job and internship applications and seeing when it’s time to follow up.
 
-## Run locally
-
-Requires Node.js 24 LTS and npm. In this directory, run:
-
-```sh
-npm ci
-npm run dev
-```
-
-Open the local URL printed by Vite. Select **New application** to add your first opportunity.
+**[Open nextstep](https://mynextstep.pages.dev/)** to start tracking applications in your browser.
 
 ## Track an opportunity
 
@@ -22,11 +13,20 @@ Open the local URL printed by Vite. Select **New application** to add your first
 
 Follow Up is calculated from the browser's local date. On the due date, a card appears there with its recruitment status visible. Completing the reminder or rescheduling it for a future date returns the card to its recruitment column. Completed applications stay in Completed. The app updates due reminders while the board is open and recalculates them when reopened.
 
-## Storage and architecture
+## Browser storage
 
-This MVP uses React, TypeScript, Tailwind CSS, and Vite. The browser stores applications and history locally on the app's origin. Data is specific to that browser profile and origin, and clearing site data removes it. Use the same local URL when returning to the app.
+nextstep saves applications, reminders, and history in the browser. Your board stays with the browser profile and site address where you created it. Clearing site data removes your board, and entries from localhost don’t carry over to the live site.
 
-The date and status rules live in `src/model.ts`. Browser storage keeps this first release runnable with one process. Spring Boot and PostgreSQL are deferred until shared, cross-device storage is needed.
+## Local development
+
+nextstep uses React, TypeScript, Tailwind CSS, and Vite. To run it locally, use Node.js 24 LTS and npm:
+
+```sh
+npm ci
+npm run dev
+```
+
+Open the local URL printed by Vite. The date and status rules live in `src/model.ts`.
 
 ## Verify
 
@@ -34,3 +34,13 @@ The date and status rules live in `src/model.ts`. Browser storage keeps this fir
 npm test
 npm run build
 ```
+
+## Supabase setup
+
+1. Install the client with `npm install @supabase/supabase-js` if it is missing from the project dependencies.
+2. In the Supabase SQL Editor, run [the applications migration](supabase/001_applications.sql). It creates the table and limits access to the account that owns each application.
+3. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in `.env.local` and restart Vite. In Supabase Auth URL Configuration, allow your local app URL (typically `http://localhost:5173`) as a redirect URL.
+4. Test sign-up and sign-in locally. Save an application and open it in a second browser with the same account. Then sign in with another account and verify that it cannot see the first account’s applications.
+5. To enable accounts on Cloudflare Pages, set the same two build environment variables, set the Supabase Auth Site URL to the live site, allow it as a redirect URL, and redeploy.
+
+Choose **Continue as guest** on the sign-in screen to use a board saved in this browser. Existing browser entries are available in guest mode. Guest and account boards are separate. Without Supabase configuration, nextstep opens directly in browser storage mode.

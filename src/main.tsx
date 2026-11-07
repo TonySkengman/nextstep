@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ArrowDownRight, ArrowUpRight, BriefcaseBusiness, CalendarDays, CalendarClock, Check, CircleCheck, Columns3, Compass, Inbox, Plus, Search, X } from 'lucide-react'
+import { Account } from './Account'
+import type { AccountBoard, SavedApplication } from './supabase'
 import { ApplicationDialog } from './ApplicationDialog'
 import { blankDetails, boardColumn, columns, completeFollowUp, followUpDate, formatDay, localDay, saveDetails } from './model'
 import type { Application, Column, Details, Kind, Status } from './model'
@@ -71,8 +73,15 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
   </article>
 }
 
-function App() {
-  const [workspace, setWorkspace] = useState(() => loadWorkspace())
+function App({ board, email, signOut, exitGuest }: {
+  board?: AccountBoard; email?: string; signOut?: () => Promise<void>; exitGuest?: () => void
+}) {
+  const [workspace, setWorkspace] = useState(() => board ? { items: [], exampleIds: [] } : loadWorkspace())
+  const [rows, setRows] = useState<SavedApplication[] | null>(null)
+  const [saveError, setSaveError] = useState('')
+  const [loadError, setLoadError] = useState(false)
+  const [reload, setReload] = useState(0)
+  const writing = useRef(false)
   const [today, setToday] = useState(localDay)
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<Kind | 'All'>('All')
@@ -89,15 +98,49 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (board) return
     setWorkspace(loadWorkspace(true))
     const sync = (event: StorageEvent) => {
       if (event.key === storageKey && event.newValue) setWorkspace(loadWorkspace())
     }
     window.addEventListener('storage', sync)
     return () => window.removeEventListener('storage', sync)
-  }, [])
+  }, [board])
 
-  function persist(next: Workspace, message: string) {
+  useEffect(() => {
+    if (!board) return
+    setLoadError(false)
+    let active = true
+    board.read().then(saved => {
+      if (!active) return
+      setRows(saved)
+      setWorkspace({ items: saved.map(row => row.data), exampleIds: [] })
+    }).catch(() => {
+      if (active) setLoadError(true)
+    })
+    return () => { active = false }
+  }, [board, reload])
+
+  async function persist(next: Workspace, message: string, change: Application | null, id: string) {
+    if (board) {
+      if (writing.current || !rows) return false
+      writing.current = true
+      setSaveError('')
+      try {
+        await board.write(change, rows.find(row => row.id === id))
+        setNotice(message)
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Could not save your changes. Try again.'
+        if (editor) setSaveError(message)
+        else setNotice(message)
+        return false
+      } finally {
+        writing.current = false
+        setRows(null)
+        setReload(value => value + 1)
+      }
+    }
     try {
       localStorage.setItem(storageKey, JSON.stringify(next))
       setStorageError(false)
@@ -106,9 +149,10 @@ function App() {
     }
     setWorkspace(next)
     setNotice(message)
+    return true
   }
 
-  function save(details: Details, previous?: Application) {
+  async function save(details: Details, previous?: Application) {
     const latest = loadLatest()
     const current = previous && latest.items.find(item => item.id === previous.id)
     if (previous && !current) {
@@ -123,7 +167,7 @@ function App() {
     }
     const item = saveDetails(details, current)
     const items = current ? latest.items.map(existing => existing.id === item.id ? item : existing) : [...latest.items, item]
-    persist({ ...latest, items }, current ? 'Application updated.' : 'Application added.')
+    if (!await persist({ ...latest, items }, current ? 'Application updated.' : 'Application added.', item, item.id)) return
     if (!current) {
       setFilter('All')
       setKind('All')
@@ -133,7 +177,7 @@ function App() {
   }
 
   function loadLatest() {
-    if (storageError) return workspace
+    if (board || storageError) return workspace
     try {
       return localStorage.getItem(storageKey) ? loadWorkspace() : workspace
     } catch {
@@ -141,19 +185,19 @@ function App() {
     }
   }
 
-  function deleteApplication(item: Application) {
+  async function deleteApplication(item: Application) {
     const latest = loadLatest()
     const current = latest.items.find(entry => entry.id === item.id)
-    setEditor(null)
     if (!current || JSON.stringify(current) !== JSON.stringify(item)) {
+      setEditor(null)
       setNotice(current ? 'This application changed in another tab. Open it again to delete it.' : 'This application was removed in another tab.')
       return
     }
     const items = latest.items.filter(entry => entry.id !== item.id)
-    persist({ ...latest, items }, 'Application deleted.')
+    if (await persist({ ...latest, items }, 'Application deleted.', null, item.id)) setEditor(null)
   }
 
-  function markDone(item: Application) {
+  async function markDone(item: Application) {
     const latest = loadLatest()
     const current = latest.items.find(entry => entry.id === item.id)
     if (!current || JSON.stringify(current.followUp) !== JSON.stringify(item.followUp) || followUpDate(current) !== followUpDate(item)) {
@@ -161,9 +205,17 @@ function App() {
       setNotice('This reminder changed in another tab. Open the application to see the latest reminder.')
       return
     }
-    const items = latest.items.map(entry => entry.id === item.id ? completeFollowUp(current) : entry)
-    persist({ ...latest, items }, `Follow-up completed for ${item.company}.`)
-    setEditor(null)
+    const updated = completeFollowUp(current)
+    const items = latest.items.map(entry => entry.id === item.id ? updated : entry)
+    if (await persist({ ...latest, items }, `Follow-up completed for ${item.company}.`, updated, item.id)) setEditor(null)
+  }
+
+  async function handleSignOut() {
+    try {
+      await signOut?.()
+    } catch {
+      setNotice('Could not sign out. Try again.')
+    }
   }
 
   const items = workspace.items
@@ -189,8 +241,16 @@ function App() {
     <header className="topbar">
       <div className="brand"><span className="brand-icon"><Compass size={23} /></span>nextstep<span className="brand-dot">.</span></div>
       <div className="top-date"><CalendarDays size={16} />{new Date(`${today}T12:00:00`).toLocaleDateString('en', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+      {signOut && <button className="secondary" onClick={handleSignOut} title={email}>Sign out</button>}
+      {exitGuest && <button className="secondary" onClick={exitGuest}>Sign in</button>}
     </header>
     <main>
+      {board && !rows ? <div role="status">
+        {loadError ? <>Could not load your saved board. <button className="secondary" onClick={() => {
+          setLoadError(false)
+          setReload(value => value + 1)
+        }}>Try again</button></> : 'Loading your saved board…'}
+      </div> : <>
       <div className="page-heading">
         <div>
           <p className="eyebrow"><span className="live-dot" /> CAREER WORKSPACE</p>
@@ -235,11 +295,14 @@ function App() {
           </div>
         </div>
       </section>
+      </>}
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button className="icon-button" aria-label="Dismiss message" onClick={() => setNotice('')}><X size={16} /></button></div>}
       {storageError && <p className="error" role="alert">Browser storage is unavailable. Changes may be lost when you close or reload this page.</p>}
     </main>
-    {editor && <ApplicationDialog initial={'item' in editor ? editor.item : blankDetails(editor.status)} item={'item' in editor ? editor.item : undefined} onClose={() => setEditor(null)} onSave={details => save(details, 'item' in editor ? editor.item : undefined)} onComplete={markDone} onDelete={deleteApplication} />}
+    {editor && <ApplicationDialog saveError={saveError} busy={Boolean(board && !rows)} initial={'item' in editor ? editor.item : blankDetails(editor.status)} item={'item' in editor ? editor.item : undefined} onClose={() => { setEditor(null); setSaveError('') }} onSave={details => save(details, 'item' in editor ? editor.item : undefined)} onComplete={markDone} onDelete={deleteApplication} />}
   </>
 }
 
-createRoot(document.getElementById('root')!).render(<App />)
+createRoot(document.getElementById('root')!).render(
+  <Account>{(board, email, signOut, owner, exitGuest) => <App key={owner ?? 'local'} board={board} email={email} signOut={signOut} exitGuest={exitGuest} />}</Account>,
+)

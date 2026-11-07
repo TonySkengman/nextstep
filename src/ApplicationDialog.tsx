@@ -5,6 +5,8 @@ import { addDays, followUpDate, formatDay, methods, statuses } from './model'
 import type { Application, Details } from './model'
 
 type Props = {
+  saveError?: string
+  busy?: boolean
   initial: Details
   item?: Application
   onClose: () => void
@@ -13,7 +15,7 @@ type Props = {
   onDelete: (item: Application) => void
 }
 
-export function ApplicationDialog({ initial, item, onClose, onSave, onComplete, onDelete }: Props) {
+export function ApplicationDialog({ saveError, busy, initial, item, onClose, onSave, onComplete, onDelete }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [details, setDetails] = useState<Details>(initial)
   const [mode, setMode] = useState(initial.followUp?.mode ?? 'none')
@@ -76,7 +78,7 @@ export function ApplicationDialog({ initial, item, onClose, onSave, onComplete, 
           <label>Notes<textarea rows={3} maxLength={8000} value={details.notes} onChange={e => update('notes', e.target.value)} placeholder="Contact details, next steps, or anything to remember…" /></label>
           <section className="follow-settings" aria-labelledby="follow-title">
             <h3 id="follow-title"><CalendarClock size={17} /> Follow-up</h3>
-            {savedDue && <div className="saved-reminder"><span>Scheduled for {formatDay(savedDue)}</span><button type="button" className="secondary" disabled={hasEdits} title={hasEdits ? "Save your changes first" : undefined} onClick={() => item && onComplete(item)}><Check size={15} /> Mark done</button></div>}
+            {savedDue && <div className="saved-reminder"><span>Scheduled for {formatDay(savedDue)}</span><button type="button" className="secondary" disabled={hasEdits || busy} title={hasEdits ? "Save your changes first" : undefined} onClick={() => item && onComplete(item)}><Check size={15} /> Mark done</button></div>}
             <div className="form-grid">
               <label>Reminder<select value={mode} onChange={e => setMode(e.target.value as typeof mode)}><option value="none">No reminder</option><option value="date">On a specific date</option><option value="interval">Days after contact</option></select></label>
               {mode === 'date' && <label>Follow-up date<input type="date" required min="1900-01-01" max="9999-12-31" value={date} onChange={e => setDate(e.target.value)} /></label>}
@@ -87,16 +89,16 @@ export function ApplicationDialog({ initial, item, onClose, onSave, onComplete, 
             <h3 id="history-title"><History size={17} /> Application history</h3>
             <ol>{item.history.map(event => <li key={event.id}><span>{event.description}</span><time dateTime={event.time}>{new Date(event.time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</time></li>)}</ol>
           </section>}
-          {error && <p role="alert" className="error">{error}</p>}
+          {(saveError || error) && <p role="alert" className="error">{saveError || error}</p>}
         </div>
         <footer className="dialog-footer">
-          {item && <button type="button" className="secondary delete-application" onClick={() => {
+          {item && <button type="button" className="secondary delete-application" disabled={busy} onClick={() => {
             if (window.confirm(`Delete ${item.position} at ${item.company}? This also removes its reminder and history.`)) {
               onDelete(item)
             }
           }}>Delete application</button>}
           <button type="button" className="secondary" onClick={onClose}>Cancel</button>
-          <button type="submit" className="primary">{item ? 'Save changes' : 'Add application'}</button>
+          <button type="submit" className="primary" disabled={busy}>{item ? 'Save changes' : 'Add application'}</button>
         </footer>
       </form>
     </dialog>
