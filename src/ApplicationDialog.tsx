@@ -1,11 +1,22 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { CalendarClock, Check, History, X } from 'lucide-react'
+import { CalendarClock, Check, ExternalLink, History, Mail, Phone, X } from 'lucide-react'
+import { InterviewFields, emptyInterview, scheduledInterview } from './InterviewFields'
 import { Modal } from './Modal'
-import { addDays, followUpDate, formatDay, methods, statuses } from './model'
+import { OutcomeBadge } from './OutcomeBadge'
+import { addDays, followUpDate, formatDay, methods, outcomes, statuses } from './model'
 import type { Application, Details } from './model'
 
-const emptyInterview = { date: '', time: '', location: '', notes: '' }
+function webLink(value?: string) {
+  if (!value) return undefined
+  try {
+    const hasScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(value)
+    const url = new URL(hasScheme ? value : `https://${value}`)
+    if (url.protocol === 'https:' || url.protocol === 'http:') return url.href
+  } catch {
+    return undefined
+  }
+}
 
 type Props = {
   saveError?: string
@@ -19,6 +30,7 @@ type Props = {
 }
 
 export function ApplicationDialog({ saveError, busy, initial, item, onClose, onSave, onComplete, onDelete }: Props) {
+  const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [details, setDetails] = useState<Details>(initial)
   const [mode, setMode] = useState(initial.followUp?.mode ?? 'none')
@@ -26,10 +38,26 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
   const [days, setDays] = useState(initial.followUp?.mode === 'interval' ? String(initial.followUp.days) : '7')
   const [error, setError] = useState('')
   const savedDue = item && followUpDate(item)
-  const interview = details.interview ?? emptyInterview
+  const interview = details.interview && (initial.status === 'Interview' || details.interview !== initial.interview)
+    ? details.interview : emptyInterview
+  const postingLink = webLink(item?.postingUrl)
+  const linkedInLink = webLink(item?.recruiterLinkedIn)
+  const emailLink = item?.recruiterEmail && `mailto:${encodeURIComponent(item.recruiterEmail).replace('%40', '@')}`
+  const phoneNumber = item?.recruiterPhone?.replace(/[\s().-]/g, '') ?? ''
+  const phoneLink = /^\+?\d+$/.test(phoneNumber) ? `tel:${phoneNumber}` : undefined
   const hasEdits = JSON.stringify(details) !== JSON.stringify(item ?? initial) || mode !== (initial.followUp?.mode ?? 'none')
     || (mode === 'date' && date !== (initial.followUp?.mode === 'date' ? initial.followUp.date : ''))
     || (mode === 'interval' && days !== String(initial.followUp?.mode === 'interval' ? initial.followUp.days : 7))
+  const history = item && <section className="history" aria-labelledby="history-title">
+    <h3 id="history-title"><History size={17} /> Application history</h3>
+    <ol>{item.history.map(event => <li key={event.id}><span>{event.description}</span><time dateTime={event.time}>{new Date(event.time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</time></li>)}</ol>
+  </section>
+  const reminder = item && savedDue && <section className="follow-settings" aria-labelledby="saved-follow-title">
+    <h3 id="saved-follow-title"><CalendarClock size={17} /> Follow-up</h3>
+    <div className="saved-reminder"><span>Scheduled for {formatDay(savedDue)}</span>
+      <button type="button" className="secondary" disabled={busy} onClick={() => onComplete(item)}><Check size={15} /> Mark done</button>
+    </div>
+  </section>
 
   function update<K extends keyof Details>(key: K, value: Details[K]) {
     setDetails(previous => ({ ...previous, [key]: value }))
@@ -50,20 +78,81 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
       setError('Choose a shorter interval or an earlier contact date.')
       return
     }
+    const postingInput = details.postingUrl?.trim()
+    const linkedInInput = details.recruiterLinkedIn?.trim()
+    const postingUrl = webLink(postingInput)
+    const recruiterLinkedIn = webLink(linkedInInput)
+    if ((postingInput && !postingUrl) || (linkedInInput && !recruiterLinkedIn)) {
+      setError('Enter a valid job posting or LinkedIn URL.')
+      return
+    }
     const followUp = mode === 'date' ? { mode, date } as const
       : mode === 'interval' ? { mode, days: Number(days) } as const
       : null
     onSave({ ...details, company: details.company.trim(), position: details.position.trim(), followUp,
-      interview: interview.date ? { ...interview, location: interview.location.trim(), notes: interview.notes.trim() } : undefined,
+      postingUrl, recruiterLinkedIn,
+      recruiterName: details.recruiterName?.trim() || undefined,
+      recruiterPhone: details.recruiterPhone?.trim() || undefined,
+      recruiterEmail: details.recruiterEmail?.trim() || undefined,
+      interview: scheduledInterview(interview),
     })
   }
 
   return <>
     <Modal titleId="dialog-title" onClose={onClose}>
-      <form onSubmit={submit}>
+      {item && !editing ? <div className="application-view">
         <header className="dialog-header">
           <div>
-            <p className="eyebrow">{item ? 'APPLICATION DETAILS' : 'NEW OPPORTUNITY'}</p>
+            <p className="eyebrow">APPLICATION DETAILS</p>
+            <h2 id="dialog-title">{item.company}</h2>
+          </div>
+          <button type="button" className="icon-button" aria-label="Close" onClick={onClose}><X size={20} /></button>
+        </header>
+        <div className="dialog-body">
+          <dl className="form-grid">
+            <div><dt>Position</dt><dd>{item.position}</dd></div>
+            <div><dt>Opportunity type</dt><dd>{item.kind}</dd></div>
+            <div><dt>Recruitment status</dt><dd>{item.status}</dd></div>
+            {item.outcome && <div><dt>Outcome</dt><dd><OutcomeBadge outcome={item.outcome} /></dd></div>}
+            {item.contactDate && <div><dt>Application or contact date</dt><dd>{formatDay(item.contactDate)}</dd></div>}
+            {item.method && <div><dt>Contact method</dt><dd>{item.method}</dd></div>}
+          </dl>
+          {(postingLink || linkedInLink || item.recruiterName || item.recruiterEmail || item.recruiterPhone) && <section className="follow-settings" aria-labelledby="saved-recruiter-title">
+            <h3 id="saved-recruiter-title">Posting and recruiter</h3>
+            <div className="recruiter-details">
+              {postingLink && <dl><dt>Job posting link <a className="icon-button" href={postingLink} target="_blank" rel="noopener noreferrer" aria-label="Open posting"><ExternalLink size={14} /></a></dt><dd>{item.postingUrl}</dd></dl>}
+              {(item.recruiterName || linkedInLink) && <dl className="form-grid">
+                {item.recruiterName && <div><dt>Recruiter name</dt><dd>{item.recruiterName}</dd></div>}
+                {linkedInLink && <div className="recruiter-details-right"><dt>Recruiter LinkedIn URL <a className="icon-button" href={linkedInLink} target="_blank" rel="noopener noreferrer" aria-label="Open LinkedIn"><ExternalLink size={14} /></a></dt><dd>{item.recruiterLinkedIn}</dd></div>}
+              </dl>}
+              {(item.recruiterEmail || item.recruiterPhone) && <dl className="form-grid">
+                {item.recruiterEmail && <div><dt>Recruiter email {emailLink && <a className="icon-button" href={emailLink} aria-label="Email contact"><Mail size={14} /></a>}</dt><dd>{item.recruiterEmail}</dd></div>}
+                {item.recruiterPhone && <div className="recruiter-details-right"><dt>Recruiter phone number {phoneLink && <a className="icon-button" href={phoneLink} aria-label="Call phone"><Phone size={14} /></a>}</dt><dd>{item.recruiterPhone}</dd></div>}
+              </dl>}
+            </div>
+          </section>}
+          {reminder}
+          {item.status === 'Interview' && item.interview && <section className="follow-settings" aria-labelledby="saved-interview-title">
+            <h3 id="saved-interview-title"><CalendarClock size={17} /> Interview details</h3>
+            <dl className="form-grid">
+              <div><dt>Interview date</dt><dd>{formatDay(item.interview.date)}</dd></div>
+              {item.interview.time && <div><dt>Time</dt><dd>{item.interview.time}</dd></div>}
+              {item.interview.location && <div><dt>Location or meeting link</dt><dd>{item.interview.location}</dd></div>}
+              {item.interview.notes && <div><dt>Interview notes</dt><dd>{item.interview.notes}</dd></div>}
+            </dl>
+          </section>}
+          {item.notes && <dl><dt>Notes</dt><dd>{item.notes}</dd></dl>}
+          {history}
+          {saveError && <p role="alert" className="error">{saveError}</p>}
+        </div>
+        <footer className="dialog-footer">
+          <button type="button" className="secondary" onClick={onClose}>Close</button>
+          <button type="button" className="primary" onClick={() => setEditing(true)}>Edit</button>
+        </footer>
+      </div> : <form onSubmit={submit}>
+        <header className="dialog-header">
+          <div>
+            <p className="eyebrow">{item ? 'EDIT APPLICATION' : 'NEW OPPORTUNITY'}</p>
             <h2 id="dialog-title">{item ? item.company : 'Add application'}</h2>
           </div>
           <button type="button" className="icon-button" aria-label="Close" onClick={onClose}><X size={20} /></button>
@@ -76,17 +165,18 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
             <label>Recruitment status<select value={details.status} onChange={e => update('status', e.target.value as Details['status'])}>{statuses.map(status => <option key={status}>{status}</option>)}</select></label>
             <label>Application or contact date<input type="date" required={mode === 'interval'} min="1900-01-01" max="9998-12-31" value={details.contactDate} onChange={e => update('contactDate', e.target.value)} /></label>
             <label>Contact method<select value={details.method} onChange={e => update('method', e.target.value as Details['method'])}><option value="">Select a method</option>{methods.map(method => <option key={method}>{method}</option>)}</select></label>
+            {details.status === 'Completed' && <label>Outcome<select value={details.outcome ?? ''} onChange={e => update('outcome', (e.target.value || undefined) as Details['outcome'])}><option value="">Select an outcome</option>{outcomes.map(outcome => <option key={outcome}>{outcome}</option>)}</select></label>}
           </div>
-          <label>Notes<textarea rows={3} maxLength={8000} value={details.notes} onChange={e => update('notes', e.target.value)} placeholder="Contact details, next steps, or anything to remember…" /></label>
-          {(details.status === 'Interview' || details.interview) && <section className="follow-settings" aria-labelledby="interview-title">
-            <h3 id="interview-title"><CalendarClock size={17} /> Interview details</h3>
+          <section className="follow-settings" aria-labelledby="recruiter-title">
+            <h3 id="recruiter-title">Posting and recruiter (optional)</h3>
             <div className="form-grid">
-              <label>Interview date<input type="date" min="1900-01-01" max="9999-12-31" required={Boolean(interview.time || interview.location.trim() || interview.notes.trim())} value={interview.date} onChange={e => update('interview', { ...interview, date: e.target.value })} /></label>
-              <label>Time<input type="time" value={interview.time} onChange={e => update('interview', { ...interview, time: e.target.value })} /></label>
-              <label>Location or meeting link<input maxLength={1000} value={interview.location} onChange={e => update('interview', { ...interview, location: e.target.value })} /></label>
-              <label>Interview notes<textarea rows={3} maxLength={8000} value={interview.notes} onChange={e => update('interview', { ...interview, notes: e.target.value })} /></label>
+              <label className="posting-link-field">Job posting link<input inputMode="url" maxLength={2000} value={details.postingUrl ?? ''} onChange={e => update('postingUrl', e.target.value)} placeholder="company.com/careers/role" /></label>
+              <label>Recruiter name<input maxLength={120} value={details.recruiterName ?? ''} onChange={e => update('recruiterName', e.target.value)} placeholder="e.g. Alex Andersson" /></label>
+              <label>Recruiter LinkedIn URL<input inputMode="url" maxLength={2000} value={details.recruiterLinkedIn ?? ''} onChange={e => update('recruiterLinkedIn', e.target.value)} placeholder="linkedin.com/in/…" /></label>
+              <label>Recruiter email<input type="email" maxLength={254} value={details.recruiterEmail ?? ''} onChange={e => update('recruiterEmail', e.target.value)} placeholder="e.g. alex@company.com" /></label>
+              <label>Recruiter phone number<input type="tel" maxLength={80} value={details.recruiterPhone ?? ''} onChange={e => update('recruiterPhone', e.target.value)} placeholder="e.g. +46 70 123 45 67" /></label>
             </div>
-          </section>}
+          </section>
           <section className="follow-settings" aria-labelledby="follow-title">
             <h3 id="follow-title"><CalendarClock size={17} /> Follow-up</h3>
             {savedDue && <div className="saved-reminder"><span>Scheduled for {formatDay(savedDue)}</span><button type="button" className="secondary" disabled={hasEdits || busy} title={hasEdits ? "Save your changes first" : undefined} onClick={() => item && onComplete(item)}><Check size={15} /> Mark done</button></div>}
@@ -96,10 +186,12 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
               {mode === 'interval' && <label>Days after contact<input type="number" required min="0" max="3650" step="1" value={days} onChange={e => setDays(e.target.value)} /></label>}
             </div>
           </section>
-          {item && <section className="history" aria-labelledby="history-title">
-            <h3 id="history-title"><History size={17} /> Application history</h3>
-            <ol>{item.history.map(event => <li key={event.id}><span>{event.description}</span><time dateTime={event.time}>{new Date(event.time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</time></li>)}</ol>
+          {details.status === 'Interview' && <section className="follow-settings" aria-labelledby="interview-title">
+            <h3 id="interview-title"><CalendarClock size={17} /> Interview details</h3>
+            <InterviewFields interview={interview} onChange={value => update('interview', value)} />
           </section>}
+          <label>Notes<textarea rows={3} maxLength={8000} value={details.notes} onChange={e => update('notes', e.target.value)} placeholder="Contact details, next steps, or anything to remember…" /></label>
+          {history}
           {(saveError || error) && <p role="alert" className="error">{saveError || error}</p>}
         </div>
         <footer className="dialog-footer">
@@ -107,7 +199,7 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
           <button type="button" className="secondary" onClick={onClose}>Cancel</button>
           <button type="submit" className="primary" disabled={busy}>{item ? 'Save changes' : 'Add application'}</button>
         </footer>
-      </form>
+      </form>}
     </Modal>
     {item && confirmDelete && <Modal titleId="delete-title" onClose={() => setConfirmDelete(false)}>
       <header className="dialog-header"><h2 id="delete-title">Delete application?</h2></header>

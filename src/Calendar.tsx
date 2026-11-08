@@ -7,7 +7,7 @@ import type { Application, CalendarEvent } from './model'
 const dailyPreviewLimit = 4
 
 function EventButton({ event, onOpen }: { event: CalendarEvent; onOpen: () => void }) {
-  const kind = event.kind === 'Interview' ? 'Interview' : 'Follow Up'
+  const { kind } = event
   const label = `${kind} · ${event.item.company} · ${event.item.position}${event.time ? ` · ${event.time}` : ''}`
   return <button type="button" className={`calendar-event tone-${event.kind === 'Interview' ? 'teal' : 'amber'}`} title={label} aria-label={label} onClick={onOpen}>
     <span className="calendar-event-details">{event.time && <span className="calendar-event-time">{event.time} </span>}{event.item.company}</span>
@@ -37,7 +37,7 @@ export function Calendar({ items, today, onOpen }: { items: Application[]; today
         </div>
       })}
     </div>
-    <div className="calendar-legend"><span><i className="follow-dot" /> Follow Up</span><span><i className="interview-dot" /> Interview</span></div>
+    <div className="calendar-legend"><span><i className="follow-dot" /> Follow-up</span><span><i className="interview-dot" /> Interview</span></div>
     {selected && <MonthCalendar initialDay={selected} today={today} eventsByDay={eventsByDay} onClose={() => setSelected(null)} onOpen={item => {
       setSelected(null)
       onOpen(item)

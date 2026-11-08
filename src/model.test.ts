@@ -10,8 +10,8 @@ test('an interval rolls across a month and surfaces once it is due', () => {
   })
   assert.equal(followUpDate(item), '2026-11-07')
   assert.equal(boardColumn(item, '2026-11-06'), 'Applied')
-  assert.equal(boardColumn(item, '2026-11-07'), 'Follow Up')
-  assert.equal(boardColumn(item, '2026-11-08'), 'Follow Up')
+  assert.equal(boardColumn(item, '2026-11-07'), 'Follow-up')
+  assert.equal(boardColumn(item, '2026-11-08'), 'Follow-up')
   assert.equal(item.status, 'Applied')
 })
 
@@ -23,7 +23,7 @@ test('rescheduling and completing preserve the recruitment stage and record hist
   const updated = saveDetails({ ...item, followUp: { mode: 'date', date: '2026-11-10' } }, item)
   assert.equal(boardColumn(updated, '2026-11-07'), 'In Contact')
   assert.match(updated.history[0].description, /^Rescheduled/)
-  assert.equal(boardColumn(updated, '2026-11-10'), 'Follow Up')
+  assert.equal(boardColumn(updated, '2026-11-10'), 'Follow-up')
 
   const completed = completeFollowUp(updated)
   assert.equal(completed.followUp, null)
@@ -73,4 +73,17 @@ test('moving an existing application to Interview saves its interview and keeps 
   const { status: previousStatus, history: previousHistory, ...previousDetails } = item
   assert.deepEqual(applicationDetails, previousDetails)
   assert.match(history[0].description, /^Scheduled interview/)
+})
+
+test('moving an application back to Applied removes the interview and keeps its follow-up', () => {
+  const item = saveDetails({
+    ...blankDetails('Interview'),
+    interview: { date: '2026-11-10', time: '14:00', location: 'Main office', notes: 'Bring portfolio' },
+    followUp: { mode: 'date', date: '2026-11-12' },
+  })
+  const updated = saveDetails({ ...item, status: 'Applied' }, item)
+  assert.equal(updated.interview, undefined)
+  assert.equal(calendarEvents([updated]).has('2026-11-10'), false)
+  assert.equal(followUpDate(updated), '2026-11-12')
+  assert.ok(updated.history.some(event => event.description === 'Removed interview details'))
 })

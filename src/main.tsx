@@ -5,6 +5,10 @@ import { Account } from './Account'
 import type { AccountBoard, SavedApplication } from './supabase'
 import { ApplicationDialog } from './ApplicationDialog'
 import { Calendar } from './Calendar'
+import { InterviewDialog } from './InterviewDialog'
+import { Modal } from './Modal'
+import { OutcomeDialog } from './OutcomeDialog'
+import { OutcomeBadge } from './OutcomeBadge'
 import { blankDetails, boardColumn, columns, completeFollowUp, followUpDate, formatDay, localDay, saveDetails } from './model'
 import type { Application, Column, Details, Kind, Status } from './model'
 import './style.css'
@@ -13,8 +17,13 @@ const storageKey = 'nextstep:applications:v1'
 const applicationDragType = 'application/x-nextstep-card'
 type Workspace = { items: Application[]; exampleIds: string[] }
 type Filter = Column | 'All' | 'Active'
+
+function isActiveApplication(item: Application) {
+  return item.status !== 'Interested' && item.status !== 'Completed'
+}
+
 const colors: Record<Column, string> = {
-  Interested: 'slate', Applied: 'blue', 'Follow Up': 'amber',
+  Interested: 'slate', Applied: 'blue', 'Follow-up': 'amber',
   'In Contact': 'violet', Interview: 'teal', Completed: 'green',
 }
 
@@ -52,7 +61,7 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
   item: Application; today: string; onOpen: () => void; onComplete: () => void
 }) {
   const date = followUpDate(item)
-  const due = boardColumn(item, today) === 'Follow Up'
+  const due = boardColumn(item, today) === 'Follow-up'
   const initials = item.company.split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase()
   const avatarColor = ['violet', 'teal', 'blue', 'amber', 'green'][item.company.charCodeAt(0) % 5]
   return <article className={`application ${due ? 'application-due' : ''}`} draggable onDragStart={event => {
@@ -65,7 +74,10 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
         <ArrowUpRight className="card-arrow" size={16} />
       </span>
       <span className="position">{item.position}</span>
-      <span className={`tag ${item.kind === 'Job' ? 'job' : 'internship'}`}>{item.kind}</span>
+      <span className="card-tags">
+        <span className={`tag ${item.kind === 'Job' ? 'job' : 'internship'}`}>{item.kind}</span>
+        {item.status === 'Completed' && item.outcome && <OutcomeBadge outcome={item.outcome} />}
+      </span>
       {item.contactDate && <span className="contact-date"><CalendarDays size={13} /> {formatDay(item.contactDate)}</span>}
       {item.status === 'Interview' && item.interview && <span className="contact-date"><CalendarClock size={13} /> Interview {formatDay(item.interview.date)}{item.interview.time && ` · ${item.interview.time}`}</span>}
     </button>
@@ -92,7 +104,7 @@ function App({ board, email, signOut, exitGuest }: {
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<Kind | 'All'>('All')
   const [filter, setFilter] = useState<Filter>('All')
-  const [editor, setEditor] = useState<{ item: Application; status?: Status } | { status: Status } | null>(null)
+  const [editor, setEditor] = useState<{ item: Application; status?: Status } | { status: Status } | 'pickCompleted' | null>(null)
   const [notice, setNotice] = useState('')
   const [storageError, setStorageError] = useState(false)
 
@@ -225,11 +237,12 @@ function App({ board, email, signOut, exitGuest }: {
   }
 
   const items = workspace.items
-  const dueCount = items.filter(item => boardColumn(item, today) === 'Follow Up').length
+  const activeItems = items.filter(isActiveApplication)
+  const dueCount = items.filter(item => boardColumn(item, today) === 'Follow-up').length
   const summaries = [
     { title: 'Total opportunities', value: items.length, caption: 'Jobs and internships', icon: BriefcaseBusiness, tone: 'violet', filter: 'All' },
-    { title: 'Active applications', value: items.filter(item => item.status !== 'Interested' && item.status !== 'Completed').length, caption: 'Applied, in contact or interviewing', icon: ArrowUpRight, tone: 'blue', filter: 'Active' },
-    { title: 'Follow-ups due', value: dueCount, caption: 'Due today or overdue', icon: CalendarClock, tone: 'amber', filter: 'Follow Up' },
+    { title: 'Active applications', value: activeItems.length, caption: 'Applied, in contact or interviewing', icon: ArrowUpRight, tone: 'blue', filter: 'Active' },
+    { title: 'Follow-ups due', value: dueCount, caption: 'Due today or overdue', icon: CalendarClock, tone: 'amber', filter: 'Follow-up' },
     { title: 'Completed', value: items.filter(item => item.status === 'Completed').length, caption: 'Closed opportunities', icon: CircleCheck, tone: 'teal', filter: 'Completed' },
   ] as const
   const matching = items.filter(item => {
@@ -237,7 +250,7 @@ function App({ board, email, signOut, exitGuest }: {
     return (kind === 'All' || item.kind === kind)
       && `${item.company} ${item.position}`.toLocaleLowerCase().includes(search)
       && (filter === 'All'
-        || (filter === 'Active' && item.status !== 'Interested' && item.status !== 'Completed')
+        || (filter === 'Active' && isActiveApplication(item))
         || filter === boardColumn(item, today))
   })
   const visibleColumns = filter === 'Active' ? columns.filter(column => column !== 'Interested' && column !== 'Completed')
@@ -284,19 +297,19 @@ function App({ board, email, signOut, exitGuest }: {
           <div className="board" style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(175px, ${visibleColumns.length === 1 ? '280px' : '1fr'}))` }}>
             {visibleColumns.map(column => {
               const cards = matching.filter(item => boardColumn(item, today) === column)
-              if (column === 'Follow Up') cards.sort((a, b) => (followUpDate(a) ?? '').localeCompare(followUpDate(b) ?? ''))
+              if (column === 'Follow-up') cards.sort((a, b) => (followUpDate(a) ?? '').localeCompare(followUpDate(b) ?? ''))
               return <section key={column} className={`lane lane-${colors[column]}`} aria-label={column}
-                onDragOver={column !== 'Follow Up' ? event => {
+                onDragOver={column !== 'Follow-up' ? event => {
                   if (!event.dataTransfer.types.includes(applicationDragType)) return
                   event.preventDefault()
                   event.dataTransfer.dropEffect = 'move'
                 } : undefined}
-                onDrop={column !== 'Follow Up' ? event => {
+                onDrop={column !== 'Follow-up' ? event => {
                   if (!event.dataTransfer.types.includes(applicationDragType)) return
                   event.preventDefault()
                   const item = items.find(item => item.id === event.dataTransfer.getData(applicationDragType))
                   if (!item) return
-                  if (column === 'Interview') {
+                  if (column === 'Interview' || (column === 'Completed' && item.status !== column)) {
                     setEditor({ item, status: column })
                   } else if (item.status !== column) {
                     void save({ ...item, status: column }, item)
@@ -304,11 +317,11 @@ function App({ board, email, signOut, exitGuest }: {
                 } : undefined}>
                 <header className="lane-header">
                   <h3><span className="lane-dot" />{column}<span className="count">{cards.length}</span></h3>
-                  {column !== 'Follow Up' && <button className="icon-button" aria-label={`Add to ${column}`} onClick={() => setEditor({ status: column })}><Plus size={16} /></button>}
+                  {column !== 'Follow-up' && <button className="icon-button" aria-label={`Add to ${column}`} onClick={() => setEditor(column === 'Completed' ? 'pickCompleted' : { status: column })}><Plus size={16} /></button>}
                 </header>
                 <div className="lane-cards">
                   {cards.map(item => <ApplicationCard key={item.id} item={item} today={today} onOpen={() => setEditor({ item })} onComplete={() => markDone(item)} />)}
-                  {!cards.length && <div className="empty"><Inbox size={19} />{column === 'Follow Up' ? 'No reminders due' : 'No applications here'}</div>}
+                  {!cards.length && <div className="empty"><Inbox size={19} />{column === 'Follow-up' ? 'No reminders due' : 'No applications here'}</div>}
                 </div>
               </section>
             })}
@@ -319,7 +332,34 @@ function App({ board, email, signOut, exitGuest }: {
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button className="icon-button" aria-label="Dismiss message" onClick={() => setNotice('')}><X size={16} /></button></div>}
       {storageError && <p className="error" role="alert">Browser storage is unavailable. Changes may be lost when you close or reload this page.</p>}
     </main>
-    {editor && <ApplicationDialog saveError={saveError} busy={Boolean(board && !rows)} initial={'item' in editor ? { ...editor.item, status: editor.status ?? editor.item.status } : blankDetails(editor.status)} item={'item' in editor ? editor.item : undefined} onClose={() => { setEditor(null); setSaveError('') }} onSave={details => save(details, 'item' in editor ? editor.item : undefined)} onComplete={markDone} onDelete={deleteApplication} />}
+    {editor === 'pickCompleted' && <Modal titleId="complete-picker-title" className="outcome-dialog" onClose={() => setEditor(null)}>
+      <header className="dialog-header"><h2 id="complete-picker-title">Select an application</h2></header>
+      <div className="dialog-body complete-picker">
+        {activeItems.length ? <ul>
+          {activeItems.map(item => <li key={item.id}>
+            <button type="button" className="secondary" onClick={() => {
+              setSaveError('')
+              setEditor({ item, status: 'Completed' })
+            }}>
+              <span>{item.company} · {item.position}</span>
+              <small>{boardColumn(item, today)}</small>
+            </button>
+          </li>)}
+        </ul> : <p>No active applications to move to Completed.</p>}
+      </div>
+      <footer className="dialog-footer">
+        <button type="button" className="secondary" onClick={() => setEditor(null)}>Cancel</button>
+      </footer>
+    </Modal>}
+    {editor && editor !== 'pickCompleted' && ('item' in editor && editor.status === 'Completed'
+      ? <OutcomeDialog item={editor.item} saveError={saveError} busy={Boolean(board && !rows)}
+          onClose={() => { setEditor(null); setSaveError('') }}
+          onSave={outcome => save({ ...editor.item, status: 'Completed', outcome }, editor.item)} />
+      : 'item' in editor && editor.status === 'Interview'
+      ? <InterviewDialog item={editor.item} saveError={saveError} busy={Boolean(board && !rows)}
+          onClose={() => { setEditor(null); setSaveError('') }}
+          onSave={interview => save({ ...editor.item, status: 'Interview', interview }, editor.item)} />
+      : <ApplicationDialog saveError={saveError} busy={Boolean(board && !rows)} initial={'item' in editor ? { ...editor.item, status: editor.status ?? editor.item.status } : blankDetails(editor.status)} item={'item' in editor ? editor.item : undefined} onClose={() => { setEditor(null); setSaveError('') }} onSave={details => save(details, 'item' in editor ? editor.item : undefined)} onComplete={markDone} onDelete={deleteApplication} />)}
   </>
 }
 

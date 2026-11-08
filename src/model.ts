@@ -1,6 +1,7 @@
 export const statuses = ['Interested', 'Applied', 'In Contact', 'Interview', 'Completed'] as const
-export const columns = ['Applied', 'Interested', 'Follow Up', 'In Contact', 'Interview', 'Completed'] as const
+export const columns = ['Applied', 'Interested', 'Follow-up', 'In Contact', 'Interview', 'Completed'] as const
 export const methods = ['Email', 'Company website', 'LinkedIn', 'Phone', 'In person', 'Other'] as const
+export const outcomes = ['Accepted', 'Rejected', 'Withdrawn', 'No response'] as const
 
 export type Status = typeof statuses[number]
 export type Column = typeof columns[number]
@@ -15,6 +16,12 @@ export type Details = {
   contactDate: string
   method: typeof methods[number] | ''
   notes: string
+  postingUrl?: string
+  recruiterName?: string
+  recruiterPhone?: string
+  recruiterEmail?: string
+  recruiterLinkedIn?: string
+  outcome?: typeof outcomes[number]
   followUp: FollowUp | null
   interview?: Interview
 }
@@ -70,7 +77,7 @@ export function calendarEvents(items: Application[]) {
 
 export function boardColumn(item: Details, today: string): Column {
   const due = followUpDate(item)
-  return item.status !== 'Completed' && due && due <= today ? 'Follow Up' : item.status
+  return item.status !== 'Completed' && due && due <= today ? 'Follow-up' : item.status
 }
 
 export function withEvent(item: Application, description: string): Application {
@@ -79,8 +86,12 @@ export function withEvent(item: Application, description: string): Application {
 }
 
 export function saveDetails(details: Details, previous?: Application): Application {
+  const outcome = details.status === 'Completed' ? details.outcome : undefined
+  details = { ...details, outcome }
+  if (details.status !== 'Interview') delete details.interview
   if (!previous) {
     let item = withEvent({ ...details, id: crypto.randomUUID(), history: [] }, `Added to ${details.status}`)
+    if (outcome) item = withEvent(item, `Recorded outcome: ${outcome}`)
     if (details.interview) {
       item = withEvent(item, `Scheduled interview for ${formatDay(details.interview.date)}`)
     }
@@ -89,12 +100,16 @@ export function saveDetails(details: Details, previous?: Application): Applicati
   }
 
   let item = { ...details, id: previous.id, history: previous.history }
-  const fields = ['company', 'position', 'kind', 'contactDate', 'method', 'notes'] as const
+  const fields = ['company', 'position', 'kind', 'contactDate', 'method', 'notes',
+    'postingUrl', 'recruiterName', 'recruiterPhone', 'recruiterEmail', 'recruiterLinkedIn'] as const
   if (fields.some(field => details[field] !== previous[field])) {
     item = withEvent(item, 'Updated application details')
   }
   if (details.status !== previous.status) {
     item = withEvent(item, `Moved from ${previous.status} to ${details.status}`)
+  }
+  if (outcome !== previous.outcome) {
+    item = withEvent(item, outcome ? `Recorded outcome: ${outcome}` : 'Cleared outcome')
   }
   if (details.interview && JSON.stringify(details.interview) !== JSON.stringify(previous.interview)) {
     item = withEvent(item, `${previous.interview ? 'Updated' : 'Scheduled'} interview for ${formatDay(details.interview.date)}`)
@@ -124,5 +139,5 @@ export function formatDay(day: string) {
 }
 
 export function blankDetails(status: Status = 'Interested'): Details {
-  return { company: '', position: '', kind: 'Job', status, contactDate: '', method: '', notes: '', followUp: null }
+  return { company: '', position: '', kind: 'Job', status, contactDate: localDay(), method: '', notes: '', followUp: null }
 }
