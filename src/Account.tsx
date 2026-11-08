@@ -1,3 +1,4 @@
+import { ThemeToggle } from './ThemeToggle'
 import { LanguageSelect, useLanguage } from './language'
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
@@ -85,29 +86,31 @@ export function Account({ children }: {
     }
   }
 
-  return <main className="account-page">
-    <div className="account-actions"><LanguageSelect /></div>
-    <header className="account-intro">
-      <p className="eyebrow"><span className="live-dot" /> {t('Career workspace')}</p>
-      <h1>{t('Take your next step')}</h1>
-      <p>{t('Keep your opportunities organized and your next steps clear.')}</p>
-    </header>
-    <form onSubmit={submit} className="account-form" aria-labelledby="account-title">
-      <h2 id="account-title">{mode === 'login' ? t('Sign in') : t('Create an account')}</h2>
-      <label>{t('Email')}<input type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} /></label>
-      <label>{t('Password')}<input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required minLength={mode === 'signup' ? 6 : undefined} value={password} onChange={event => setPassword(event.target.value)} /></label>
-      <button className="primary" disabled={busy}>{mode === 'login' ? t('Sign in') : t('Create account')}</button>
-      <button type="button" className="secondary" disabled={busy} onClick={() => {
-        setMode(mode === 'login' ? 'signup' : 'login')
-        setMessage('')
-      }}>{mode === 'login' ? t('Create an account') : t('Back to sign in')}</button>
-      <button type="button" className="secondary" disabled={busy} onClick={() => {
-        setPassword('')
-        setMessage('')
-        changeGuest(true)
-      }}>{t('Continue as guest')}</button>
-      <p>{t('Guest applications are saved in this browser.')}</p>
-      {message && <p role="status">{t(message)}</p>}
-    </form>
-  </main>
+  return <>
+    <header className="account-actions"><ThemeToggle /><LanguageSelect /></header>
+    <main className="account-page">
+      <header className="account-intro">
+        <p className="eyebrow"><span className="live-dot" /> {t('Career workspace')}</p>
+        <h1>{t('Take your next step')}</h1>
+        <p>{t('Keep your opportunities organized and your next steps clear.')}</p>
+      </header>
+      <form onSubmit={submit} className="account-form" aria-labelledby="account-title">
+        <h2 id="account-title">{mode === 'login' ? t('Sign in') : t('Create an account')}</h2>
+        <label>{t('Email')}<input type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} /></label>
+        <label>{t('Password')}<input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required minLength={mode === 'signup' ? 6 : undefined} value={password} onChange={event => setPassword(event.target.value)} /></label>
+        <button className="primary" disabled={busy}>{mode === 'login' ? t('Sign in') : t('Create account')}</button>
+        <button type="button" className="secondary" disabled={busy} onClick={() => {
+          setMode(mode === 'login' ? 'signup' : 'login')
+          setMessage('')
+        }}>{mode === 'login' ? t('Create an account') : t('Back to sign in')}</button>
+        <button type="button" className="secondary" disabled={busy} onClick={() => {
+          setPassword('')
+          setMessage('')
+          changeGuest(true)
+        }}>{t('Continue as guest')}</button>
+        <p>{t('Guest applications are saved in this browser.')}</p>
+        {message && <p role="status">{t(message)}</p>}
+      </form>
+    </main>
+  </>
 }

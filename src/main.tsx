@@ -1,3 +1,4 @@
+import { ThemeToggle } from './ThemeToggle'
 import { LanguageProvider, LanguageSelect, useLanguage } from './language'
 import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -433,6 +434,7 @@ function App({ board, email, signOut, exitGuest }: {
         <CalendarDays size={16} />{new Date(`${today}T12:00:00`).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })}
       </button>
       <div className="topbar-actions">
+        <ThemeToggle />
         <LanguageSelect />
         {signOut && <button className="secondary" disabled={importing} onClick={handleSignOut} title={email}>{t('Sign out')}</button>}
         {exitGuest && <button className="secondary" onClick={exitGuest}>{t('Sign in')}</button>}

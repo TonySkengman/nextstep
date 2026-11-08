@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Track job and internship applications and stay on top of follow-ups." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      try {
+        if (localStorage.getItem('nextstep:theme') === 'dark') {
+          document.documentElement.dataset.theme = 'dark'
+        }
+      } catch {
+        // Light is the default when storage is unavailable.
+      }
+    </script>
     <title>nextstep — Your next opportunity</title>
   </head>
   <body>

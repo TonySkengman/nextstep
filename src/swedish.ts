@@ -1,4 +1,8 @@
 export const swedish: Readonly<Record<string, string>> = {
+  "Light": "Ljust",
+  "Dark": "Mörkt",
+  "Switch to light mode": "Byt till ljust läge",
+  "Switch to dark mode": "Byt till mörkt läge",
   "Add event": "Lägg till händelse",
   "Application": "Ansökan",
   "Event type": "Typ av händelse",
