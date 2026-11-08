@@ -15,14 +15,22 @@ function EventButton({ event, onOpen }: { event: CalendarEvent; onOpen: () => vo
   </button>
 }
 
-export function Calendar({ items, today, onOpen }: { items: Application[]; today: string; onOpen: (item: Application) => void }) {
+export function Calendar({ items, today, selected, setSelected, onOpen }: {
+  items: Application[]
+  today: string
+  selected: string | null
+  setSelected: (day: string | null) => void
+  onOpen: (item: Application) => void
+}) {
   const eventsByDay = calendarEvents(items)
-  const [selected, setSelected] = useState<string | null>(null)
 
   return <section className="calendar-preview" aria-label="Calendar for the next seven days">
-    <button className="calendar-heading" onClick={() => setSelected(today)}>
-      <CalendarDays size={17} /> <strong>Next 7 days</strong><span>Open calendar <ArrowUpRight size={14} /></span>
-    </button>
+    <div className="calendar-heading">
+      <CalendarDays size={17} /> <strong>Next 7 days</strong>
+      <button type="button" aria-haspopup="dialog" onClick={() => setSelected(today)}>
+        Open calendar <ArrowUpRight size={14} />
+      </button>
+    </div>
     <div className="calendar-week">
       {Array.from({ length: 7 }, (_, index) => {
         const day = addDays(today, index)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { blankDetails, boardColumn, calendarEvents, completeFollowUp, followUpDate, localDay, saveDetails } from './model.ts'
+import { blankDetails, boardColumn, calendarEvents, completeFollowUp, followUpCount, followUpDate, localDay, saveDetails } from './model.ts'
 
 test('an interval rolls across a month and surfaces once it is due', () => {
   const item = saveDetails({
@@ -28,8 +28,23 @@ test('rescheduling and completing preserve the recruitment stage and record hist
   const completed = completeFollowUp(updated)
   assert.equal(completed.followUp, null)
   assert.equal(boardColumn(completed, '2026-11-11'), 'In Contact')
+  assert.equal(completed.status, 'In Contact')
+  assert.equal(followUpCount(completed), 1)
   assert.match(completed.history[0].description, /^Completed follow-up/)
   assert.equal(completeFollowUp(completed), completed)
+})
+
+test('scheduling the next follow-up records the current one and returns the card to Follow-up when due', () => {
+  const item = saveDetails({ ...blankDetails('Applied'), followUp: null })
+  const scheduled = completeFollowUp(item, '2026-11-07')
+  assert.equal(followUpCount(scheduled), 0)
+
+  const followedUp = completeFollowUp(scheduled, '2026-11-14')
+  assert.equal(followUpCount(followedUp), 1)
+  assert.equal(followUpDate(followedUp), '2026-11-14')
+  assert.equal(boardColumn(followedUp, '2026-11-13'), 'Applied')
+  assert.equal(boardColumn(followedUp, '2026-11-14'), 'Follow-up')
+  assert.equal(followUpCount(completeFollowUp(followedUp)), 2)
 })
 
 test('completed applications stay in Completed when a reminder date passes', () => {

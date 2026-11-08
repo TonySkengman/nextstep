@@ -7,15 +7,17 @@ A Kanban dashboard for tracking job and internship applications and seeing when 
 ## Track an opportunity
 
 1. Select **+** in the column where you want to add the opportunity.
-2. Add the company and position, and set the opportunity type, recruitment status, contact details, and notes.
-3. Schedule a follow-up for a specific date or a number of calendar days after the contact date.
-4. Open a card to edit its stage, reschedule its reminder, or view its history. Use the checkmark to complete a follow-up.
+2. Add the company, position, opportunity type, and any relevant location, contact details, or notes.
+3. Choose a follow-up date or select **No reminder**. The date defaults to seven calendar days from today.
+4. Open a card to edit its details or view its history. Use **Mark done** to record a follow-up, or **Schedule another follow-up** to record it and set the next reminder.
 
-Drag a card into a recruitment column to change its stage. Dropping it into **Interview** opens the form with its saved application details and fields for the interview date, time, location or meeting link, and notes. Save to apply the change. You can also open a card and set its recruitment status to **Interview**, or use **+** in **Interview** to add an opportunity at that stage.
+Use **+** in **Interested** to save an opportunity before applying. Enter the company, position, and opportunity type, with optional location, application deadline, posting and recruiter details, and notes.
+
+Drag a card into a recruitment column to change its stage. Dropping it into **Interview** opens the form with its saved application details and fields for the interview date, time, location or meeting link, and notes. Save to apply the change. Use **+** in **Interview** to add an opportunity at that stage.
 
 The dashboard calendar shows follow-ups and interviews for today and the next six days. Select **Open calendar** to browse by month, or select an event to open its application.
 
-Follow-up is calculated from the browser's local date. On the due date, a card appears there with its recruitment status visible. Completing the reminder or rescheduling it for a future date returns the card to its recruitment column. Completed applications stay in Completed. The app updates due reminders while the board is open and recalculates them when reopened.
+Follow-up is calculated from the browser's local date. On the due date, a card appears in **Follow-up**. After a follow-up is recorded, the card returns to its recruitment column and shows how many follow-ups have been recorded. Closed applications stay in **Completed**.
 
 ## Browser storage
 

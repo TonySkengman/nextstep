@@ -11,6 +11,8 @@ export type Interview = { date: string; time: string; location: string; notes: s
 export type Details = {
   company: string
   position: string
+  location?: string
+  applicationDeadline?: string
   kind: Kind
   status: Status
   contactDate: string
@@ -75,6 +77,12 @@ export function calendarEvents(items: Application[]) {
   return days
 }
 
+const completedFollowUpPrefix = 'Completed follow-up due '
+
+export function followUpCount(item: Application) {
+  return item.history.filter(event => event.description.startsWith(completedFollowUpPrefix)).length
+}
+
 export function boardColumn(item: Details, today: string): Column {
   const due = followUpDate(item)
   return item.status !== 'Completed' && due && due <= today ? 'Follow-up' : item.status
@@ -100,7 +108,7 @@ export function saveDetails(details: Details, previous?: Application): Applicati
   }
 
   let item = { ...details, id: previous.id, history: previous.history }
-  const fields = ['company', 'position', 'kind', 'contactDate', 'method', 'notes',
+  const fields = ['company', 'position', 'location', 'applicationDeadline', 'kind', 'contactDate', 'method', 'notes',
     'postingUrl', 'recruiterName', 'recruiterPhone', 'recruiterEmail', 'recruiterLinkedIn'] as const
   if (fields.some(field => details[field] !== previous[field])) {
     item = withEvent(item, 'Updated application details')
@@ -128,9 +136,12 @@ export function saveDetails(details: Details, previous?: Application): Applicati
   return item
 }
 
-export function completeFollowUp(item: Application) {
+export function completeFollowUp(item: Application, nextDate?: string) {
   const due = followUpDate(item)
-  return due ? withEvent({ ...item, followUp: null }, `Completed follow-up due ${formatDay(due)}`) : item
+  const completed = due ? withEvent({ ...item, followUp: null }, `${completedFollowUpPrefix}${formatDay(due)}`) : item
+  return nextDate
+    ? withEvent({ ...completed, followUp: { mode: 'date', date: nextDate } }, `Scheduled follow-up for ${formatDay(nextDate)}`)
+    : completed
 }
 
 export function formatDay(day: string) {
@@ -139,5 +150,10 @@ export function formatDay(day: string) {
 }
 
 export function blankDetails(status: Status = 'Interested'): Details {
-  return { company: '', position: '', kind: 'Job', status, contactDate: localDay(), method: '', notes: '', followUp: null }
+  const today = localDay()
+  const interested = status === 'Interested'
+  return {
+    company: '', position: '', kind: 'Job', status, contactDate: interested ? '' : today, method: '', notes: '',
+    followUp: interested ? null : { mode: 'date', date: addDays(today, 7) },
+  }
 }

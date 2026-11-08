@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowDownRight, ArrowUpRight, BriefcaseBusiness, CalendarDays, CalendarClock, Check, CircleCheck, Columns3, Compass, Inbox, Plus, Search, X } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, BriefcaseBusiness, CalendarDays, CalendarClock, Check, CircleCheck, Columns3, Compass, Inbox, MapPin, Plus, Search, X } from 'lucide-react'
 import { Account } from './Account'
 import type { AccountBoard, SavedApplication } from './supabase'
 import { ApplicationDialog } from './ApplicationDialog'
@@ -9,7 +9,7 @@ import { InterviewDialog } from './InterviewDialog'
 import { Modal } from './Modal'
 import { OutcomeDialog } from './OutcomeDialog'
 import { OutcomeBadge } from './OutcomeBadge'
-import { blankDetails, boardColumn, columns, completeFollowUp, followUpDate, formatDay, localDay, saveDetails } from './model'
+import { blankDetails, boardColumn, columns, completeFollowUp, followUpCount, followUpDate, formatDay, localDay, outcomes, saveDetails } from './model'
 import type { Application, Column, Details, Kind, Status } from './model'
 import './style.css'
 
@@ -20,6 +20,13 @@ type Filter = Column | 'All' | 'Active'
 
 function isActiveApplication(item: Application) {
   return item.status !== 'Interested' && item.status !== 'Completed'
+}
+
+function opportunityBadges(items: Application[]) {
+  return (['Job', 'Internship'] as const).map(kind => {
+    const count = items.filter(item => item.kind === kind).length
+    return count > 0 && <span key={kind} className={`tag ${kind.toLowerCase()}`}>{count} {kind}{count === 1 ? '' : 's'}</span>
+  })
 }
 
 const colors: Record<Column, string> = {
@@ -62,6 +69,7 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
 }) {
   const date = followUpDate(item)
   const due = boardColumn(item, today) === 'Follow-up'
+  const followedUp = followUpCount(item)
   const initials = item.company.split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase()
   const avatarColor = ['violet', 'teal', 'blue', 'amber', 'green'][item.company.charCodeAt(0) % 5]
   return <article className={`application ${due ? 'application-due' : ''}`} draggable onDragStart={event => {
@@ -78,13 +86,16 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
         <span className={`tag ${item.kind === 'Job' ? 'job' : 'internship'}`}>{item.kind}</span>
         {item.status === 'Completed' && item.outcome && <OutcomeBadge outcome={item.outcome} />}
       </span>
+      {item.location && <span className="contact-date"><MapPin size={13} className="shrink-0" /><span className="card-location">{item.location}</span></span>}
+      {item.status === 'Interested' && item.applicationDeadline && <span className="contact-date"><CalendarDays size={13} /> Apply by {formatDay(item.applicationDeadline)}</span>}
       {item.contactDate && <span className="contact-date"><CalendarDays size={13} /> {formatDay(item.contactDate)}</span>}
+      {followedUp > 0 && <span className="contact-date"><Check size={13} /> Followed up {followedUp} {followedUp === 1 ? 'time' : 'times'}</span>}
       {item.status === 'Interview' && item.interview && <span className="contact-date"><CalendarClock size={13} /> Interview {formatDay(item.interview.date)}{item.interview.time && ` · ${item.interview.time}`}</span>}
     </button>
     {date && item.status !== 'Completed' && <div className={`reminder ${due ? 'tone-amber' : ''}`}>
       <div>
         <div className="flex items-center gap-1.5"><CalendarClock size={14} /> {due ? (date === today ? 'Due today' : 'Overdue') : formatDay(date)}</div>
-        {due && <span className="reminder-stage">{item.status} · {formatDay(date)}</span>}
+        {due && <span className="reminder-date">{formatDay(date)}</span>}
       </div>
       <button className="icon-button" aria-label={`Complete follow-up for ${item.company}`} title="Mark follow-up done" onClick={onComplete}><Check size={16} /></button>
     </div>}
@@ -101,6 +112,7 @@ function App({ board, email, signOut, exitGuest }: {
   const [reload, setReload] = useState(0)
   const writing = useRef(false)
   const [today, setToday] = useState(localDay)
+  const [calendarDay, setCalendarDay] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<Kind | 'All'>('All')
   const [filter, setFilter] = useState<Filter>('All')
@@ -185,7 +197,8 @@ function App({ board, email, signOut, exitGuest }: {
     }
     const item = saveDetails(details, current)
     const items = current ? latest.items.map(existing => existing.id === item.id ? item : existing) : [...latest.items, item]
-    if (!await persist({ ...latest, items }, current ? 'Application updated.' : 'Application added.', item, item.id)) return
+    const message = current ? 'Application updated.' : item.status === 'Interested' ? 'Opportunity saved.' : 'Application added.'
+    if (!await persist({ ...latest, items }, message, item, item.id)) return
     if (!current) {
       setFilter('All')
       setKind('All')
@@ -215,17 +228,18 @@ function App({ board, email, signOut, exitGuest }: {
     if (await persist({ ...latest, items }, 'Application deleted.', null, item.id)) setEditor(null)
   }
 
-  async function markDone(item: Application) {
+  async function markDone(item: Application, nextDate?: string) {
     const latest = loadLatest()
     const current = latest.items.find(entry => entry.id === item.id)
-    if (!current || JSON.stringify(current.followUp) !== JSON.stringify(item.followUp) || followUpDate(current) !== followUpDate(item)) {
+    if (!current || current.status !== item.status || JSON.stringify(current.followUp) !== JSON.stringify(item.followUp) || followUpDate(current) !== followUpDate(item) || followUpCount(current) !== followUpCount(item)) {
       setEditor(null)
       setNotice('This reminder changed in another tab. Open the application to see the latest reminder.')
       return
     }
-    const updated = completeFollowUp(current)
+    const updated = completeFollowUp(current, nextDate)
+    const message = nextDate ? `Next follow-up for ${item.company} scheduled for ${formatDay(nextDate)}.` : `Follow-up completed for ${item.company}.`
     const items = latest.items.map(entry => entry.id === item.id ? updated : entry)
-    if (await persist({ ...latest, items }, `Follow-up completed for ${item.company}.`, updated, item.id)) setEditor(null)
+    if (await persist({ ...latest, items }, message, updated, item.id)) setEditor(null)
   }
 
   async function handleSignOut() {
@@ -238,13 +252,29 @@ function App({ board, email, signOut, exitGuest }: {
 
   const items = workspace.items
   const activeItems = items.filter(isActiveApplication)
-  const dueCount = items.filter(item => boardColumn(item, today) === 'Follow-up').length
+  const dueItems = items.filter(item => boardColumn(item, today) === 'Follow-up')
+  const dueToday = dueItems.filter(item => followUpDate(item) === today).length
+  const overdue = dueItems.length - dueToday
+  const completedItems = items.filter(item => item.status === 'Completed')
+  const completedOutcomes = outcomes.map(outcome => ({
+    outcome,
+    count: completedItems.filter(item => item.outcome === outcome).length,
+  })).filter(({ count }) => count > 0)
   const summaries = [
     { title: 'Total opportunities', value: items.length, caption: 'Jobs and internships', icon: BriefcaseBusiness, tone: 'violet', filter: 'All' },
     { title: 'Active applications', value: activeItems.length, caption: 'Applied, in contact or interviewing', icon: ArrowUpRight, tone: 'blue', filter: 'Active' },
-    { title: 'Follow-ups due', value: dueCount, caption: 'Due today or overdue', icon: CalendarClock, tone: 'amber', filter: 'Follow-up' },
-    { title: 'Completed', value: items.filter(item => item.status === 'Completed').length, caption: 'Closed opportunities', icon: CircleCheck, tone: 'teal', filter: 'Completed' },
+    { title: 'Follow-ups due', value: dueItems.length, caption: dueItems.length ? 'Due today or overdue' : 'You’re all caught up', icon: CalendarClock, tone: 'amber', filter: 'Follow-up' },
+    { title: 'Completed', value: completedItems.length, caption: 'Closed opportunities', icon: CircleCheck, tone: 'teal', filter: 'Completed' },
   ] as const
+  const summaryBadges = {
+    All: opportunityBadges(items),
+    Active: opportunityBadges(activeItems),
+    'Follow-up': [
+      overdue > 0 && <span key="overdue" className="tag follow-up-overdue">{overdue} Overdue</span>,
+      dueToday > 0 && <span key="today" className="tag tone-amber">{dueToday} Due today</span>,
+    ],
+    Completed: completedOutcomes.map(({ outcome, count }) => <OutcomeBadge key={outcome} outcome={outcome} count={count} />),
+  }
   const matching = items.filter(item => {
     const search = query.trim().toLocaleLowerCase()
     return (kind === 'All' || item.kind === kind)
@@ -262,7 +292,9 @@ function App({ board, email, signOut, exitGuest }: {
         <div className="brand"><span className="brand-icon"><Compass size={23} /></span>nextstep<span className="brand-dot">.</span></div>
         <span className="brand-tagline">Take your next step</span>
       </div>
-      <div className="top-date"><CalendarDays size={16} />{new Date(`${today}T12:00:00`).toLocaleDateString('en', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+      <button type="button" className="top-date" aria-haspopup="dialog" title="Open calendar" disabled={Boolean(board && !rows)} onClick={() => setCalendarDay(today)}>
+        <CalendarDays size={16} />{new Date(`${today}T12:00:00`).toLocaleDateString('en', { weekday: 'short', day: 'numeric', month: 'short' })}
+      </button>
       {signOut && <button className="secondary" onClick={handleSignOut} title={email}>Sign out</button>}
       {exitGuest && <button className="secondary" onClick={exitGuest}>Sign in</button>}
     </header>
@@ -280,9 +312,11 @@ function App({ board, email, signOut, exitGuest }: {
           <span className="metric-value">{summary.value}</span>
           <span className="metric-title">{summary.title}</span>
           <span className="metric-caption">{summary.caption}</span>
+          {summaryBadges[summary.filter].some(Boolean) &&
+            <span className="metric-badges">{summaryBadges[summary.filter]}</span>}
         </button>)}
       </section>
-      <Calendar items={items} today={today} onOpen={item => setEditor({ item })} />
+      <Calendar items={items} today={today} selected={calendarDay} setSelected={setCalendarDay} onOpen={item => setEditor({ item })} />
       </div>
       <section className="board-panel" aria-labelledby="board-title">
         <div className="board-toolbar">
@@ -298,13 +332,14 @@ function App({ board, email, signOut, exitGuest }: {
             {visibleColumns.map(column => {
               const cards = matching.filter(item => boardColumn(item, today) === column)
               if (column === 'Follow-up') cards.sort((a, b) => (followUpDate(a) ?? '').localeCompare(followUpDate(b) ?? ''))
+              const isStage = column !== 'Follow-up'
               return <section key={column} className={`lane lane-${colors[column]}`} aria-label={column}
-                onDragOver={column !== 'Follow-up' ? event => {
+                onDragOver={isStage ? event => {
                   if (!event.dataTransfer.types.includes(applicationDragType)) return
                   event.preventDefault()
                   event.dataTransfer.dropEffect = 'move'
                 } : undefined}
-                onDrop={column !== 'Follow-up' ? event => {
+                onDrop={isStage ? event => {
                   if (!event.dataTransfer.types.includes(applicationDragType)) return
                   event.preventDefault()
                   const item = items.find(item => item.id === event.dataTransfer.getData(applicationDragType))
@@ -317,7 +352,7 @@ function App({ board, email, signOut, exitGuest }: {
                 } : undefined}>
                 <header className="lane-header">
                   <h3><span className="lane-dot" />{column}<span className="count">{cards.length}</span></h3>
-                  {column !== 'Follow-up' && <button className="icon-button" aria-label={`Add to ${column}`} onClick={() => setEditor(column === 'Completed' ? 'pickCompleted' : { status: column })}><Plus size={16} /></button>}
+                  {isStage && <button className="icon-button" aria-label={`Add to ${column}`} onClick={() => setEditor(column === 'Completed' ? 'pickCompleted' : { status: column })}><Plus size={16} /></button>}
                 </header>
                 <div className="lane-cards">
                   {cards.map(item => <ApplicationCard key={item.id} item={item} today={today} onOpen={() => setEditor({ item })} onComplete={() => markDone(item)} />)}
@@ -342,7 +377,6 @@ function App({ board, email, signOut, exitGuest }: {
               setEditor({ item, status: 'Completed' })
             }}>
               <span>{item.company} · {item.position}</span>
-              <small>{boardColumn(item, today)}</small>
             </button>
           </li>)}
         </ul> : <p>No active applications to move to Completed.</p>}
