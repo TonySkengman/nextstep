@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { formatDay } from './model'
 import { swedish } from './swedish'
 
@@ -44,10 +45,37 @@ export function useLanguage() {
 
 export function LanguageSelect() {
   const { language, setLanguage, t } = useLanguage()
-  return <select className="language-select" aria-label={t('Language')} value={language} onChange={event => setLanguage(event.target.value === 'sv' ? 'sv' : 'en')}>
-    <option value="en" lang="en" label="English 🇬🇧">English</option>
-    <option value="sv" lang="sv" label="Svenska 🇸🇪">Svenska</option>
-  </select>
+  const languages = {
+    en: { name: 'English', flag: 'flag-gb.svg' },
+    sv: { name: 'Svenska', flag: 'flag-se.svg' },
+  }
+  const label = (code: Language) => <>
+    <span lang={code}>{languages[code].name}</span>
+    <img src={import.meta.env.BASE_URL + languages[code].flag} alt="" />
+  </>
+  return <details className="language-picker" onBlur={event => {
+    if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false
+  }} onKeyDown={event => {
+    if (event.key === 'Escape' && event.currentTarget.open) {
+      event.stopPropagation()
+      event.currentTarget.open = false
+      event.currentTarget.querySelector('summary')?.focus()
+    }
+  }}>
+    <summary className="language-select" aria-label={`${t('Language')}: ${languages[language].name}`}>
+      {label(language)} <ChevronDown size={14} aria-hidden="true" />
+    </summary>
+    <div className="language-options">
+      {(['en', 'sv'] as const).map(code => <button type="button" key={code} aria-pressed={language === code} onMouseDown={event => event.preventDefault()} onClick={event => {
+        const picker = event.currentTarget.closest('details')
+        setLanguage(code)
+        if (picker) {
+          picker.open = false
+          picker.querySelector('summary')?.focus()
+        }
+      }}>{label(code)}</button>)}
+    </div>
+  </details>
 }
 
 // Saved history uses English descriptions. Translate known events at display time.

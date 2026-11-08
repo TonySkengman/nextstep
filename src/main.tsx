@@ -10,7 +10,7 @@ import { InterviewDialog } from './InterviewDialog'
 import { Modal } from './Modal'
 import { OutcomeDialog } from './OutcomeDialog'
 import { OutcomeBadge } from './OutcomeBadge'
-import { addDays, archiveInterview, blankDetails, boardColumn, columns, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, outcomes, saveDetails } from './model'
+import { addDays, archiveInterview, awaitingResponseDays, blankDetails, boardColumn, columns, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, outcomes, saveDetails } from './model'
 import type { Application, Column, Details, Kind, Status } from './model'
 import './style.css'
 
@@ -87,6 +87,7 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
   const date = followUpDate(item)
   const due = boardColumn(item, today) === 'Follow-up'
   const followedUp = followUpCount(item)
+  const waitingDays = due ? null : awaitingResponseDays(item, today)
   const deadline = item.status === 'Interested' ? item.applicationDeadline ?? '' : ''
   const deadlineSoon = deadline >= today && deadline <= addDays(today, 3)
   const initials = item.company.split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase()
@@ -111,6 +112,10 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
       {item.location && <span className="contact-date"><MapPin size={13} className="shrink-0" /><span className="card-location">{item.location}</span></span>}
       {item.contactDate && <span className="contact-date"><CalendarDays size={13} /> {formatDay(item.contactDate)}</span>}
       {followedUp > 0 && <span className="contact-date"><Check size={13} /> {t(followedUp === 1 ? 'Followed up {count} time' : 'Followed up {count} times', { count: followedUp })}</span>}
+      {waitingDays !== null && <span className="contact-date"><CalendarClock size={13} /> {t(
+        waitingDays === 0 ? 'Waiting since today' : waitingDays === 1 ? 'Waiting 1 day' : 'Waiting {count} days',
+        { count: waitingDays },
+      )}</span>}
       {item.status === 'Interview' && (item.interviewDone
         ? <span className="contact-date"><Check size={13} /> {t('Interview done')}</span>
         : item.interview && <span className="contact-date"><CalendarClock size={13} /> {t('Interview {date}', { date: formatDay(item.interview.date) })}{item.interview.time && ` · ${item.interview.time}`}</span>)}
@@ -146,7 +151,7 @@ function App({ board, email, signOut, exitGuest }: {
   const [filter, setFilter] = useState<Filter>('All')
   const [boardColumns, setBoardColumns] = useState(loadBoardColumns)
   const [draftColumns, setDraftColumns] = useState<Column[] | null>(null)
-  const [editor, setEditor] = useState<{ item: Application; status?: Status; finishInterview?: boolean } | { status: Status } | 'pickCompleted' | 'pickInterview' | null>(null)
+  const [editor, setEditor] = useState<{ item: Application; status?: Status; finishInterview?: boolean } | { status: Status } | { draft: Details } | 'pickCompleted' | 'pickInterview' | 'pickAwaitingResponse' | null>(null)
   const [interviewFollowUpDate, setInterviewFollowUpDate] = useState<string | null>(null)
   const [followUpPrompt, setFollowUpPrompt] = useState<Application | null>(null)
   const [promptDate, setPromptDate] = useState<string | null>(null)
@@ -381,8 +386,11 @@ function App({ board, email, signOut, exitGuest }: {
 
   const items = workspace.items
   const activeItems = items.filter(isActiveApplication)
-  const pickerStatus = editor === 'pickInterview' ? 'Interview' : 'Completed'
-  const pickerItems = editor === 'pickInterview' ? activeItems.filter(item => !item.interviewDone && !item.interview?.date) : activeItems
+  const pickerItems = activeItems.filter(item => {
+    if (editor === 'pickInterview') return !item.interviewDone && !item.interview?.date
+    if (editor === 'pickAwaitingResponse') return item.status !== 'Awaiting response'
+    return true
+  })
   const dueItems = items.filter(item => boardColumn(item, today) === 'Follow-up')
   const dueToday = dueItems.filter(item => followUpDate(item) === today).length
   const overdue = dueItems.length - dueToday
@@ -510,6 +518,10 @@ function App({ board, email, signOut, exitGuest }: {
                   {isStage && <button className="icon-button" aria-label={column === 'Interview' ? t('Add interview') : t('Add to {column}', { column: t(column) })} onClick={() => {
                     if (column === 'Interview') setEditor('pickInterview')
                     else if (column === 'Completed') setEditor('pickCompleted')
+                    else if (column === 'Awaiting response') {
+                      setSaveError('')
+                      setEditor('pickAwaitingResponse')
+                    }
                     else setEditor({ status: column })
                   }}><Plus size={16} /></button>}
                 </header>
@@ -569,20 +581,24 @@ function App({ board, email, signOut, exitGuest }: {
         <button type="button" className="secondary clear-board-button" disabled={clearing} onClick={clearBoard}>{clearing ? t('Clearing…') : t('Clear board')}</button>
       </footer>
     </Modal>}
-    {(editor === 'pickCompleted' || editor === 'pickInterview') && <Modal titleId="application-picker-title" className="outcome-dialog" onClose={() => setEditor(null)}>
+    {(editor === 'pickCompleted' || editor === 'pickInterview' || editor === 'pickAwaitingResponse') && <Modal titleId="application-picker-title" className="outcome-dialog" onClose={() => setEditor(null)}>
       <header className="dialog-header"><h2 id="application-picker-title">{editor === 'pickInterview' ? t('Add interview') : t('Select an application')}</h2></header>
       <div className="dialog-body complete-picker">
         {editor === 'pickInterview' && pickerItems.length > 0 && <p>{t('Choose the application this interview is for.')}</p>}
         {pickerItems.length ? <ul>
           {pickerItems.map(item => <li key={item.id}>
-            <button type="button" className="secondary" onClick={() => {
+            <button type="button" className="secondary" disabled={editor === 'pickAwaitingResponse' && Boolean(board && !rows)} onClick={() => {
               setSaveError('')
-              setEditor({ item, status: pickerStatus })
+              if (editor === 'pickAwaitingResponse') void save({ ...item, status: 'Awaiting response' }, item)
+              else setEditor({ item, status: editor === 'pickInterview' ? 'Interview' : 'Completed' })
             }}>
               <span>{item.company} · {item.position}</span>
             </button>
           </li>)}
-        </ul> : <p>{editor === 'pickInterview' ? t('No active applications without a scheduled interview.') : t('No active applications to move to Completed.')}</p>}
+        </ul> : <p>{editor === 'pickInterview' ? t('No active applications without a scheduled interview.')
+          : editor === 'pickAwaitingResponse' ? t('No active applications to move to Awaiting response.')
+          : t('No active applications to move to Completed.')}</p>}
+        {editor === 'pickAwaitingResponse' && saveError && <p className="error" role="alert">{t(saveError)}</p>}
       </div>
       <footer className="dialog-footer">
         <button type="button" className="secondary" onClick={() => setEditor(null)}>{t('Cancel')}</button>
@@ -626,11 +642,21 @@ function App({ board, email, signOut, exitGuest }: {
       ? <InterviewDialog item={editor.item} saveError={saveError} busy={Boolean(board && !rows)} nextRound={editor.finishInterview}
           onClose={() => { setEditor(editor.finishInterview ? { item: editor.item, finishInterview: true } : null); setSaveError('') }}
           onSave={interview => save({ ...(editor.finishInterview ? archiveInterview(editor.item) : editor.item), status: 'Interview', interview }, editor.item)} />
-      : <ApplicationDialog saveError={saveError} busy={Boolean(board && !rows)} initial={'item' in editor ? { ...editor.item, status: editor.status ?? editor.item.status } : blankDetails(editor.status)} item={'item' in editor ? editor.item : undefined} onClose={() => { setEditor(null); setSaveError('') }} onSave={details => save(details, 'item' in editor ? editor.item : undefined)} onMarkApplied={markApplied} onFinishInterview={item => {
+      : <ApplicationDialog key={'draft' in editor ? 'duplicate' : 'item' in editor ? editor.item.id : 'new'}
+          saveError={saveError} busy={Boolean(board && !rows)}
+          initial={'draft' in editor ? editor.draft : 'item' in editor ? { ...editor.item, status: editor.status ?? editor.item.status } : blankDetails(editor.status)}
+          item={'item' in editor ? editor.item : undefined} onClose={() => { setEditor(null); setSaveError('') }} onSave={details => save(details, 'item' in editor ? editor.item : undefined)} onMarkApplied={markApplied} onFinishInterview={item => {
         setSaveError('')
         setInterviewFollowUpDate(null)
         setEditor({ item, finishInterview: true })
-      }} onComplete={markDone} onDelete={deleteApplication} />)}
+      }} onComplete={markDone} onDuplicate={item => {
+        setSaveError('')
+        const { company, location, kind, recruiterName, recruiterLinkedIn, recruiterEmail, recruiterPhone } = item
+        setEditor({ draft: {
+          ...blankDetails('Interested'),
+          company, location, kind, recruiterName, recruiterLinkedIn, recruiterEmail, recruiterPhone,
+        } })
+      }} onDelete={deleteApplication} />)}
     {followUpPrompt && <Modal titleId="applied-follow-up-title" className="outcome-dialog" onClose={() => {
       setFollowUpPrompt(null)
       setSaveError('')

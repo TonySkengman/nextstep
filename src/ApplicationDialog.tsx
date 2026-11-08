@@ -39,12 +39,14 @@ type Props = {
   onMarkApplied: (item: Application) => void
   onFinishInterview: (item: Application) => void
   onComplete: (item: Application, nextDate?: string) => void
+  onDuplicate: (item: Application) => void
   onDelete: (item: Application) => void
 }
 
-export function ApplicationDialog({ saveError, busy, initial, item, onClose, onSave, onMarkApplied, onFinishInterview, onComplete, onDelete }: Props) {
+export function ApplicationDialog({ saveError, busy, initial, item, onClose, onSave, onMarkApplied, onFinishInterview, onComplete, onDuplicate, onDelete }: Props) {
   const { t, formatDay, locale } = useLanguage()
   const registeringInterest = !item && initial.status === 'Interested'
+  const trackingOpportunity = !item && initial.status === 'In Contact'
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [details, setDetails] = useState<Details>(initial)
@@ -186,6 +188,7 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
           {saveError && <p role="alert" className="error">{t(saveError)}</p>}
         </div>
         <footer className="dialog-footer">
+          <button type="button" className="secondary" disabled={busy} onClick={() => onDuplicate(item)}>{t('Duplicate opportunity')}</button>
           <button type="button" className="secondary" onClick={onClose}>{t('Close')}</button>
           <button type="button" className={item.status === 'Interested' || item.status === 'Interview' ? 'secondary' : 'primary'} onClick={() => setEditing(true)}>{t('Edit')}</button>
           {item.status === 'Interested' && <button type="button" className="primary" disabled={busy} onClick={() => onMarkApplied(item)}><Check size={15} /> {t('Mark as applied')}</button>}
@@ -195,7 +198,8 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
         <header className="dialog-header">
           <div>
             <p className="eyebrow">{item ? t('EDIT APPLICATION') : t('NEW OPPORTUNITY')}</p>
-            <h2 id="dialog-title">{item ? item.company : registeringInterest ? t('Save an opportunity') : t('Add application')}</h2>
+            <h2 id="dialog-title">{item ? item.company : trackingOpportunity ? t('Track an opportunity')
+              : registeringInterest ? t('Save an opportunity') : t('Add application')}</h2>
           </div>
           <button type="button" className="icon-button" aria-label={t('Close')} onClick={onClose}><X size={20} /></button>
         </header>
@@ -254,7 +258,8 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
         <footer className="dialog-footer">
           {item && <button type="button" className="secondary delete-application" disabled={busy} onClick={() => setConfirmDelete(true)}>{t('Delete application')}</button>}
           <button type="button" className="secondary" onClick={onClose}>{t('Cancel')}</button>
-          <button type="submit" className="primary" disabled={busy}>{item ? t('Save changes') : registeringInterest ? t('Save opportunity') : t('Add application')}</button>
+          <button type="submit" className="primary" disabled={busy}>{item ? t('Save changes') : trackingOpportunity ? t('Track opportunity')
+            : registeringInterest ? t('Save opportunity') : t('Add application')}</button>
         </footer>
       </form>}
     </Modal>

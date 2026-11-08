@@ -1,6 +1,24 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { archiveInterview, blankDetails, boardColumn, calendarEvents, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, saveDetails } from './model.ts'
+import { archiveInterview, awaitingResponseDays, blankDetails, boardColumn, calendarEvents, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, saveDetails } from './model.ts'
+
+test('waiting time uses the latest interview or completed follow-up and ignores scheduled reminders', () => {
+  const item = {
+    ...blankDetails('Awaiting response'),
+    id: 'waiting',
+    contactDate: '2026-10-20',
+    pastInterviews: [{ date: '2026-10-24', time: '', location: '', notes: '' }],
+    followUp: { mode: 'date' as const, date: '2026-11-01' },
+    history: [
+      { id: 'follow-up', time: new Date('2026-10-29T12:00:00').toISOString(), description: 'Completed follow-up due 26 Oct 2026' },
+      { id: 'stage', time: new Date('2026-10-27T12:00:00').toISOString(), description: 'Moved from Interview to Awaiting response' },
+    ],
+  }
+  assert.equal(awaitingResponseDays(item, '2026-11-01'), 3)
+  assert.equal(awaitingResponseDays({ ...item, history: item.history.slice(1) }, '2026-11-01'), 8)
+  assert.equal(awaitingResponseDays({ ...item, history: item.history.slice(1), pastInterviews: [] }, '2026-11-01'), 5)
+  assert.equal(awaitingResponseDays({ ...item, status: 'In Contact' }, '2026-11-01'), null)
+})
 
 test('an interval rolls across a month and surfaces once it is due', () => {
   const item = saveDetails({

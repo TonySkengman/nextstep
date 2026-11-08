@@ -88,6 +88,33 @@ export function followUpCount(item: Application) {
   return item.history.filter(event => event.description.startsWith(completedFollowUpPrefix)).length
 }
 
+export function awaitingResponseDays(item: Application, today: string) {
+  if (item.status !== 'Awaiting response') return null
+
+  const activityDates = (item.pastInterviews ?? []).map(interview => interview.date)
+  const stageDates: string[] = []
+  for (const event of item.history) {
+    const completedFollowUp = event.description.startsWith(completedFollowUpPrefix)
+    const enteredStage = event.description === 'Added to Awaiting response'
+      || /^Moved from .+ to Awaiting response$/.test(event.description)
+    if (!completedFollowUp && !enteredStage) continue
+
+    const time = new Date(event.time)
+    if (Number.isNaN(time.getTime())) continue
+    const day = localDay(time)
+    if (completedFollowUp) activityDates.push(day)
+    else stageDates.push(day)
+  }
+
+  const latestDay = (days: string[]) => days
+    .filter(day => /^\d{4}-\d{2}-\d{2}$/.test(day) && day <= today && Number.isFinite(Date.parse(day)))
+    .sort().pop()
+  const since = latestDay(activityDates) ?? latestDay(stageDates) ?? latestDay([item.contactDate])
+  if (!since) return null
+
+  return (Date.parse(today) - Date.parse(since)) / 86_400_000
+}
+
 export function boardColumn(item: Details, today: string): Column {
   const due = followUpDate(item)
   return item.status !== 'Completed' && due && due <= today ? 'Follow-up' : item.status
