@@ -14,6 +14,6 @@ nextstep is a Kanban dashboard for organizing your job and internship search. Sa
 
 ## Guest mode and accounts
 
-Choose **Continue as guest** to start without an account. Your guest board is saved in your current browser. Clearing the site’s data deletes it.
+Choose **Continue as guest** to start without an account. Your guest board stays in your current browser after you close it. Clearing the site’s data deletes it.
 
-Sign in to access your account board across browsers and devices. Guest and account boards are separate.
+Sign in to access your account board across browsers and devices. If you have a guest board in the same browser, you can copy its applications into your account. The guest copy stays in the browser.

@@ -32,7 +32,20 @@ export function accountBoard(client: NonNullable<typeof supabase>, owner: string
     if (!data?.length) throw new Error('This application changed elsewhere. Reopen it and try again.')
   }
 
-  return { read, write }
+  async function importGuest(items: Application[]) {
+    const { error } = await table().upsert(
+      items.map(item => ({ owner_id: owner, id: item.id, data: item })),
+      { onConflict: 'owner_id,id', ignoreDuplicates: true },
+    )
+    if (error) throw error
+  }
+
+  async function clear() {
+    const { error } = await table().delete().eq('owner_id', owner)
+    if (error) throw error
+  }
+
+  return { read, write, importGuest, clear }
 }
 
 export type AccountBoard = ReturnType<typeof accountBoard>

@@ -5,7 +5,16 @@ import { InterviewFields, emptyInterview, scheduledInterview } from './Interview
 import { Modal } from './Modal'
 import { OutcomeBadge } from './OutcomeBadge'
 import { addDays, followUpCount, followUpDate, formatDay, localDay, methods, outcomes } from './model'
-import type { Application, Details } from './model'
+import type { Application, Details, Interview } from './model'
+
+function InterviewSummary({ interview }: { interview: Interview }) {
+  return <dl className="form-grid">
+    <div><dt>Interview date</dt><dd>{formatDay(interview.date)}</dd></div>
+    {interview.time && <div><dt>Time</dt><dd>{interview.time}</dd></div>}
+    {interview.location && <div><dt>Location or meeting link</dt><dd>{interview.location}</dd></div>}
+    {interview.notes && <div><dt>Interview notes</dt><dd>{interview.notes}</dd></div>}
+  </dl>
+}
 
 function webLink(value?: string) {
   if (!value) return undefined
@@ -25,11 +34,13 @@ type Props = {
   item?: Application
   onClose: () => void
   onSave: (details: Details) => void
+  onMarkApplied: (item: Application) => void
+  onFinishInterview: (item: Application) => void
   onComplete: (item: Application, nextDate?: string) => void
   onDelete: (item: Application) => void
 }
 
-export function ApplicationDialog({ saveError, busy, initial, item, onClose, onSave, onComplete, onDelete }: Props) {
+export function ApplicationDialog({ saveError, busy, initial, item, onClose, onSave, onMarkApplied, onFinishInterview, onComplete, onDelete }: Props) {
   const registeringInterest = !item && initial.status === 'Interested'
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -117,7 +128,7 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
       recruiterName: details.recruiterName?.trim() || undefined,
       recruiterPhone: details.recruiterPhone?.trim() || undefined,
       recruiterEmail: details.recruiterEmail?.trim() || undefined,
-      interview: scheduledInterview(interview),
+      interview: details.status === 'Completed' && details.interviewDone ? details.interview : scheduledInterview(interview),
     })
   }
 
@@ -132,6 +143,17 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
           <button type="button" className="icon-button" aria-label="Close" onClick={onClose}><X size={20} /></button>
         </header>
         <div className="dialog-body">
+          {(item.status === 'Interview' || item.interviewDone) && <section className="follow-settings" aria-labelledby="saved-interview-title">
+            <h3 id="saved-interview-title"><CalendarClock size={17} /> Interview details</h3>
+            {item.interviewDone && <p>Interview marked as done.</p>}
+            {item.interview ? <InterviewSummary interview={item.interview} /> : !item.interviewDone && <p>No interview date scheduled yet.</p>}
+          </section>}
+          {Boolean(item.pastInterviews?.length) && <section className="follow-settings" aria-labelledby="past-interviews-title">
+            <h3 id="past-interviews-title"><CalendarClock size={17} /> Previous interviews</h3>
+            <div className="past-interviews">
+              {item.pastInterviews?.map((interview, index) => <InterviewSummary key={index} interview={interview} />)}
+            </div>
+          </section>}
           <dl className="form-grid">
             <div><dt>Position</dt><dd>{item.position}</dd></div>
             {item.location && <div><dt>Location</dt><dd>{item.location}</dd></div>}
@@ -155,23 +177,16 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
               </dl>}
             </div>
           </section>}
-          {reminder}
-          {item.status === 'Interview' && item.interview && <section className="follow-settings" aria-labelledby="saved-interview-title">
-            <h3 id="saved-interview-title"><CalendarClock size={17} /> Interview details</h3>
-            <dl className="form-grid">
-              <div><dt>Interview date</dt><dd>{formatDay(item.interview.date)}</dd></div>
-              {item.interview.time && <div><dt>Time</dt><dd>{item.interview.time}</dd></div>}
-              {item.interview.location && <div><dt>Location or meeting link</dt><dd>{item.interview.location}</dd></div>}
-              {item.interview.notes && <div><dt>Interview notes</dt><dd>{item.interview.notes}</dd></div>}
-            </dl>
-          </section>}
+          {item.status !== 'Interested' && item.status !== 'Interview' && reminder}
           {item.notes && <dl><dt>Notes</dt><dd>{item.notes}</dd></dl>}
           {history}
           {saveError && <p role="alert" className="error">{saveError}</p>}
         </div>
         <footer className="dialog-footer">
           <button type="button" className="secondary" onClick={onClose}>Close</button>
-          <button type="button" className="primary" onClick={() => setEditing(true)}>Edit</button>
+          <button type="button" className={item.status === 'Interested' || item.status === 'Interview' ? 'secondary' : 'primary'} onClick={() => setEditing(true)}>Edit</button>
+          {item.status === 'Interested' && <button type="button" className="primary" disabled={busy} onClick={() => onMarkApplied(item)}><Check size={15} /> Mark as applied</button>}
+          {item.status === 'Interview' && <button type="button" className="primary" disabled={busy} onClick={() => onFinishInterview(item)}><Check size={15} /> {item.interviewDone ? 'Next steps' : 'Mark as done'}</button>}
         </footer>
       </div> : <form onSubmit={submit}>
         <header className="dialog-header">

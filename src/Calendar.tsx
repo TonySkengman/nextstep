@@ -5,11 +5,12 @@ import { addDays, calendarEvents, formatDay, localDay } from './model'
 import type { Application, CalendarEvent } from './model'
 
 const dailyPreviewLimit = 4
+const eventTones = { 'Follow-up': 'red', Interview: 'teal', 'Deadline': 'violet' }
 
 function EventButton({ event, onOpen }: { event: CalendarEvent; onOpen: () => void }) {
   const { kind } = event
   const label = `${kind} · ${event.item.company} · ${event.item.position}${event.time ? ` · ${event.time}` : ''}`
-  return <button type="button" className={`calendar-event tone-${event.kind === 'Interview' ? 'teal' : 'amber'}`} title={label} aria-label={label} onClick={onOpen}>
+  return <button type="button" className={`calendar-event tone-${eventTones[kind]}`} title={label} aria-label={label} onClick={onOpen}>
     <span className="calendar-event-details">{event.time && <span className="calendar-event-time">{event.time} </span>}{event.item.company}</span>
     <span className="calendar-event-kind">{kind}</span>
   </button>
@@ -45,7 +46,7 @@ export function Calendar({ items, today, selected, setSelected, onOpen }: {
         </div>
       })}
     </div>
-    <div className="calendar-legend"><span><i className="follow-dot" /> Follow-up</span><span><i className="interview-dot" /> Interview</span></div>
+    <div className="calendar-legend"><span><i className="follow-dot" /> Follow-up</span><span><i className="interview-dot" /> Interview</span><span><i className="deadline-dot" /> Deadline</span></div>
     {selected && <MonthCalendar initialDay={selected} today={today} eventsByDay={eventsByDay} onClose={() => setSelected(null)} onOpen={item => {
       setSelected(null)
       onOpen(item)
@@ -96,13 +97,14 @@ function MonthCalendar({ initialDay, today, eventsByDay, onClose, onOpen }: {
             <span className="month-dots" aria-hidden="true">
               {events.some(event => event.kind === 'Follow-up') && <i className="follow-dot" />}
               {events.some(event => event.kind === 'Interview') && <i className="interview-dot" />}
+              {events.some(event => event.kind === 'Deadline') && <i className="deadline-dot" />}
             </span>
           </button>
         })}
       </div>
       <section className="calendar-agenda" aria-labelledby="agenda-title">
         <h3 id="agenda-title">{formatDay(selected)}</h3>
-        {selectedEvents.length === 0 && <p>No follow-ups or interviews scheduled.</p>}
+        {selectedEvents.length === 0 && <p>No events scheduled.</p>}
         {selectedEvents.map(event => <EventButton key={`${event.item.id}-${event.kind}`} event={event} onOpen={() => onOpen(event.item)} />)}
       </section>
     </div>

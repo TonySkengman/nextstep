@@ -1,5 +1,5 @@
-export const statuses = ['Interested', 'Applied', 'In Contact', 'Interview', 'Completed'] as const
-export const columns = ['Applied', 'Interested', 'Follow-up', 'In Contact', 'Interview', 'Completed'] as const
+export const statuses = ['Interested', 'Applied', 'In Contact', 'Interview', 'Awaiting response', 'Completed'] as const
+export const columns = ['Applied', 'Interested', 'Follow-up', 'In Contact', 'Interview', 'Awaiting response', 'Completed'] as const
 export const methods = ['Email', 'Company website', 'LinkedIn', 'Phone', 'In person', 'Other'] as const
 export const outcomes = ['Accepted', 'Rejected', 'Withdrawn', 'No response'] as const
 
@@ -26,6 +26,8 @@ export type Details = {
   outcome?: typeof outcomes[number]
   followUp: FollowUp | null
   interview?: Interview
+  interviewDone?: boolean
+  pastInterviews?: Interview[]
 }
 export type Event = { id: string; time: string; description: string }
 export type Application = Details & { id: string; history: Event[] }
@@ -51,7 +53,7 @@ export function followUpDate(item: Pick<Details, 'contactDate' | 'followUp'>) {
 export type CalendarEvent = {
   item: Application
   date: string
-  kind: 'Follow-up' | 'Interview'
+  kind: 'Follow-up' | 'Interview' | 'Deadline'
   time?: string
 }
 
@@ -65,9 +67,12 @@ export function calendarEvents(items: Application[]) {
 
   for (const item of items) {
     if (item.status === 'Completed') continue
+    if (item.status === 'Interested' && item.applicationDeadline) {
+      add({ item, date: item.applicationDeadline, kind: 'Deadline' })
+    }
     const due = followUpDate(item)
     if (due) add({ item, date: due, kind: 'Follow-up' })
-    if (item.status === 'Interview' && item.interview?.date) {
+    if (item.status === 'Interview' && !item.interviewDone && item.interview?.date) {
       add({ item, date: item.interview.date, kind: 'Interview', time: item.interview.time })
     }
   }
@@ -93,10 +98,31 @@ export function withEvent(item: Application, description: string): Application {
   return { ...item, history: [event, ...item.history] }
 }
 
+export function archiveInterview(item: Details): Details {
+  return {
+    ...item,
+    interview: undefined,
+    interviewDone: undefined,
+    pastInterviews: item.interview ? [...(item.pastInterviews ?? []), item.interview] : item.pastInterviews,
+  }
+}
+
+export function normalizeApplication(item: Application): Application {
+  return item.status === 'Interview' && item.interviewDone
+    ? { ...item, ...archiveInterview(item), status: 'Awaiting response' }
+    : item
+}
+
 export function saveDetails(details: Details, previous?: Application): Application {
   const outcome = details.status === 'Completed' ? details.outcome : undefined
   details = { ...details, outcome }
-  if (details.status !== 'Interview') delete details.interview
+  if (details.status === 'Awaiting response' && previous?.status === 'Interview') {
+    details = archiveInterview({ ...details, interview: details.interview ?? previous.interview })
+  }
+  if (details.status !== 'Interview' && !(details.status === 'Completed' && details.interviewDone)) {
+    delete details.interview
+    delete details.interviewDone
+  }
   if (!previous) {
     let item = withEvent({ ...details, id: crypto.randomUUID(), history: [] }, `Added to ${details.status}`)
     if (outcome) item = withEvent(item, `Recorded outcome: ${outcome}`)
@@ -119,10 +145,17 @@ export function saveDetails(details: Details, previous?: Application): Applicati
   if (outcome !== previous.outcome) {
     item = withEvent(item, outcome ? `Recorded outcome: ${outcome}` : 'Cleared outcome')
   }
-  if (details.interview && JSON.stringify(details.interview) !== JSON.stringify(previous.interview)) {
-    item = withEvent(item, `${previous.interview ? 'Updated' : 'Scheduled'} interview for ${formatDay(details.interview.date)}`)
-  } else if (!details.interview && previous.interview) {
+  const archivedInterview = (details.pastInterviews?.length ?? 0) > (previous.pastInterviews?.length ?? 0)
+  if (archivedInterview) {
+    item = withEvent(item, 'Recorded previous interview')
+  }
+  if (details.interview && (archivedInterview || JSON.stringify(details.interview) !== JSON.stringify(previous.interview))) {
+    item = withEvent(item, `${previous.interview && !archivedInterview ? 'Updated' : 'Scheduled'} interview for ${formatDay(details.interview.date)}`)
+  } else if (!details.interview && previous.interview && !archivedInterview) {
     item = withEvent(item, 'Removed interview details')
+  }
+  if (details.interviewDone && !previous.interviewDone) {
+    item = withEvent(item, 'Marked interview as done')
   }
   const nextDue = followUpDate(details)
   const previousDue = followUpDate(previous)

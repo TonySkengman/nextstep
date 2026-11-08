@@ -12,9 +12,13 @@ export function Account({ children }: {
   const [user, setUser] = useState<{ id: string; email?: string } | null>()
   const [guest, setGuest] = useState(() => {
     try {
-      return sessionStorage.getItem(guestKey) === 'true'
+      return (localStorage.getItem(guestKey) ?? sessionStorage.getItem(guestKey)) === 'true'
     } catch {
-      return false
+      try {
+        return sessionStorage.getItem(guestKey) === 'true'
+      } catch {
+        return false
+      }
     }
   })
   const [email, setEmail] = useState('')
@@ -38,10 +42,13 @@ export function Account({ children }: {
   function changeGuest(enabled: boolean) {
     setGuest(enabled)
     try {
-      if (enabled) sessionStorage.setItem(guestKey, 'true')
-      else sessionStorage.removeItem(guestKey)
+      localStorage.setItem(guestKey, String(enabled))
     } catch {
-      // Guest mode still works when session storage is unavailable.
+      try {
+        sessionStorage.setItem(guestKey, String(enabled))
+      } catch {
+        // Guest mode still works for the current page.
+      }
     }
   }
 

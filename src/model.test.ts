@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { blankDetails, boardColumn, calendarEvents, completeFollowUp, followUpCount, followUpDate, localDay, saveDetails } from './model.ts'
+import { archiveInterview, blankDetails, boardColumn, calendarEvents, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, saveDetails } from './model.ts'
 
 test('an interval rolls across a month and surfaces once it is due', () => {
   const item = saveDetails({
@@ -69,6 +69,52 @@ test('the calendar groups scheduled interviews and follow-ups by date', () => {
     [item.id, 'Interview', '14:00'],
     [item.id, 'Follow-up', undefined],
   ])
+})
+
+test('application deadlines appear in the calendar only while interested', () => {
+  const item = saveDetails({ ...blankDetails('Interested'), applicationDeadline: '2026-11-11' })
+  assert.deepEqual(calendarEvents([item]).get('2026-11-11'), [
+    { item, date: '2026-11-11', kind: 'Deadline' },
+  ])
+  for (const status of ['Applied', 'Completed'] as const) {
+    assert.equal(calendarEvents([{ ...item, status }]).has('2026-11-11'), false)
+  }
+})
+
+test('a finished interview keeps its details and shows only the new follow-up on the calendar', () => {
+  const interview = { date: '2026-11-11', time: '14:00', location: '', notes: 'Discussed next steps' }
+  const item = saveDetails({ ...blankDetails('Interview'), interview, followUp: null })
+  const done = saveDetails({
+    ...item, interviewDone: true, followUp: { mode: 'date', date: '2026-11-18' },
+  }, item)
+
+  assert.deepEqual(done.interview, interview)
+  assert.ok(done.history.some(event => event.description === 'Marked interview as done'))
+  assert.equal(calendarEvents([done]).has(interview.date), false)
+  assert.equal(calendarEvents([done]).get('2026-11-18')?.[0]?.kind, 'Follow-up')
+  assert.equal(boardColumn(done, '2026-11-18'), 'Follow-up')
+  assert.deepEqual(saveDetails({ ...done, status: 'Completed' }, done).interview, interview)
+})
+
+test('interview next steps preserve previous rounds and schedule only the next event', () => {
+  const first = { date: '2026-11-11', time: '14:00', location: '', notes: 'Screening' }
+  const second = { ...first, date: '2026-11-18', notes: 'Technical interview' }
+  const item = saveDetails({ ...blankDetails('Interview'), interview: first, followUp: null })
+  const next = saveDetails({ ...archiveInterview(item), interview: second }, item)
+  assert.deepEqual(next.pastInterviews, [first])
+  assert.deepEqual([...calendarEvents([next]).keys()], [second.date])
+
+  const contacted = saveDetails({
+    ...next, status: 'Awaiting response', followUp: { mode: 'date', date: '2026-11-25' },
+  }, next)
+  assert.deepEqual(contacted.pastInterviews, [first, second])
+  assert.equal(boardColumn(contacted, '2026-11-24'), 'Awaiting response')
+  assert.equal(boardColumn(contacted, '2026-11-25'), 'Follow-up')
+  assert.equal(boardColumn(completeFollowUp(contacted), '2026-11-25'), 'Awaiting response')
+
+  const legacy = normalizeApplication({ ...next, interviewDone: true })
+  assert.deepEqual(legacy.pastInterviews, [first, second])
+  assert.equal(legacy.status, 'Awaiting response')
 })
 
 test('moving an existing application to Interview saves its interview and keeps its application details', () => {
