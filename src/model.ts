@@ -1,5 +1,5 @@
-export const statuses = ['Interested', 'Applied', 'In Contact', 'Interview', 'Awaiting response', 'Completed'] as const
-export const columns = ['Applied', 'Interested', 'Follow-up', 'In Contact', 'Interview', 'Awaiting response', 'Completed'] as const
+export const statuses = ['Interested', 'Applied', 'In Contact', 'Interview', 'Awaiting decision', 'Completed'] as const
+export const columns = ['Applied', 'Interested', 'Follow-up', 'In Contact', 'Interview', 'Awaiting decision', 'Completed'] as const
 export const methods = ['Email', 'Company website', 'LinkedIn', 'Phone', 'In person', 'Other'] as const
 export const outcomes = ['Accepted', 'Rejected', 'Withdrawn', 'No response'] as const
 
@@ -15,9 +15,12 @@ export type Details = {
   applicationDeadline?: string
   kind: Kind
   status: Status
+  pinned?: boolean
+  boardOrder?: Partial<Record<Column, string>>
   contactDate: string
   method: typeof methods[number] | ''
   notes: string
+  decisionNote?: string
   postingUrl?: string
   recruiterName?: string
   recruiterPhone?: string
@@ -88,15 +91,15 @@ export function followUpCount(item: Application) {
   return item.history.filter(event => event.description.startsWith(completedFollowUpPrefix)).length
 }
 
-export function awaitingResponseDays(item: Application, today: string) {
-  if (item.status !== 'Awaiting response') return null
+export function awaitingDecisionDays(item: Application, today: string) {
+  if (item.status !== 'Awaiting decision') return null
 
   const activityDates = (item.pastInterviews ?? []).map(interview => interview.date)
   const stageDates: string[] = []
   for (const event of item.history) {
     const completedFollowUp = event.description.startsWith(completedFollowUpPrefix)
-    const enteredStage = event.description === 'Added to Awaiting response'
-      || /^Moved from .+ to Awaiting response$/.test(event.description)
+    const enteredStage = event.description === 'Added to Awaiting decision'
+      || /^Moved from .+ to Awaiting decision$/.test(event.description)
     if (!completedFollowUp && !enteredStage) continue
 
     const time = new Date(event.time)
@@ -120,6 +123,47 @@ export function boardColumn(item: Details, today: string): Column {
   return item.status !== 'Completed' && due && due <= today ? 'Follow-up' : item.status
 }
 
+function orderKey(item: Application, column: Column) {
+  const defaultOrder = column === 'Follow-up' ? followUpDate(item)
+    : column === 'Interested' ? item.applicationDeadline
+    : item.history.at(-1)?.time
+  return item.boardOrder?.[column] ?? `${defaultOrder || '9999-99-99'}|${item.id}`
+}
+
+export function sortColumnCards(cards: Application[], column: Column) {
+  return [...cards].sort((a, b) => {
+    const pinOrder = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
+    if (pinOrder) return pinOrder
+    const first = orderKey(a, column)
+    const second = orderKey(b, column)
+    return first < second ? -1 : first > second ? 1 : 0
+  })
+}
+
+// A key between neighbors lets each move save only the dragged card.
+function keyBetween(lower: string, upper?: string) {
+  let prefix = ''
+  for (let index = 0; ; index++) {
+    const low = lower.charCodeAt(index) || 32
+    const high = upper?.charCodeAt(index) || 126
+    if (high - low > 1) return prefix + String.fromCharCode(Math.floor((low + high) / 2))
+    prefix += String.fromCharCode(low)
+    if (low < high) upper = undefined
+  }
+}
+
+export function orderCard(item: Application, cards: Application[], column: Column, beforeId: string | null) {
+  const neighbors = sortColumnCards(cards.filter(card => card.id !== item.id), column)
+  const target = neighbors.findIndex(card => card.id === beforeId)
+  const group = neighbors.filter(card => Boolean(card.pinned) === Boolean(item.pinned))
+  const previous = target < 0 ? group : neighbors.slice(0, target)
+    .filter(card => Boolean(card.pinned) === Boolean(item.pinned))
+  const lower = previous.at(-1)
+  const upper = group[previous.length]
+  const key = keyBetween(lower ? orderKey(lower, column) : '', upper ? orderKey(upper, column) : undefined)
+  return { ...item.boardOrder, [column]: key + item.id }
+}
+
 export function withEvent(item: Application, description: string): Application {
   const event = { id: crypto.randomUUID(), time: new Date().toISOString(), description }
   return { ...item, history: [event, ...item.history] }
@@ -134,16 +178,33 @@ export function archiveInterview(item: Details): Details {
   }
 }
 
-export function normalizeApplication(item: Application): Application {
-  return item.status === 'Interview' && item.interviewDone
-    ? { ...item, ...archiveInterview(item), status: 'Awaiting response' }
-    : item
+const legacyWaitingStatus = 'Awaiting response'
+
+export function normalizeColumnName(name: string) {
+  return name === legacyWaitingStatus ? 'Awaiting decision' : name
+}
+
+export function normalizeApplication(saved: Omit<Application, 'status'> & { status: Status | typeof legacyWaitingStatus }): Application {
+  const status = saved.status === legacyWaitingStatus ? 'Awaiting decision' : saved.status
+  const item = { ...saved, status }
+  const history = item.history.map(event => {
+    const added = /^Added to (.+)$/.exec(event.description)
+    const moved = /^Moved from (.+) to (.+)$/.exec(event.description)
+    if (added?.[1] === legacyWaitingStatus) return { ...event, description: 'Added to Awaiting decision' }
+    if (moved && (moved[1] === legacyWaitingStatus || moved[2] === legacyWaitingStatus)) {
+      return { ...event, description: `Moved from ${normalizeColumnName(moved[1])} to ${normalizeColumnName(moved[2])}` }
+    }
+    return event
+  })
+  return status === 'Interview' && item.interviewDone
+    ? { ...item, ...archiveInterview(item), status: 'Awaiting decision', history }
+    : { ...item, history }
 }
 
 export function saveDetails(details: Details, previous?: Application): Application {
   const outcome = details.status === 'Completed' ? details.outcome : undefined
-  details = { ...details, outcome }
-  if (details.status === 'Awaiting response' && previous?.status === 'Interview') {
+  details = { ...details, outcome, decisionNote: details.decisionNote?.trim() || undefined }
+  if (details.status === 'Awaiting decision' && previous?.status === 'Interview') {
     details = archiveInterview({ ...details, interview: details.interview ?? previous.interview })
   }
   if (details.status !== 'Interview' && !(details.status === 'Completed' && details.interviewDone)) {
@@ -161,7 +222,7 @@ export function saveDetails(details: Details, previous?: Application): Applicati
   }
 
   let item = { ...details, id: previous.id, history: previous.history }
-  const fields = ['company', 'position', 'location', 'applicationDeadline', 'kind', 'contactDate', 'method', 'notes',
+  const fields = ['company', 'position', 'location', 'applicationDeadline', 'kind', 'contactDate', 'method', 'notes', 'decisionNote',
     'postingUrl', 'recruiterName', 'recruiterPhone', 'recruiterEmail', 'recruiterLinkedIn'] as const
   if (fields.some(field => details[field] !== previous[field])) {
     item = withEvent(item, 'Updated application details')

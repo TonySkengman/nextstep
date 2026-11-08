@@ -14,7 +14,7 @@ function InterviewSummary({ interview }: { interview: Interview }) {
     <div><dt>{t('Interview date')}</dt><dd>{formatDay(interview.date)}</dd></div>
     {interview.time && <div><dt>{t('Time')}</dt><dd>{interview.time}</dd></div>}
     {interview.location && <div><dt>{t('Location or meeting link')}</dt><dd>{interview.location}</dd></div>}
-    {interview.notes && <div><dt>{t('Interview notes')}</dt><dd>{interview.notes}</dd></div>}
+    {interview.notes && <div className="full-width-field"><dt>{t('Interview notes')}</dt><dd>{interview.notes}</dd></div>}
   </dl>
 }
 
@@ -57,6 +57,10 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
   const [nextFollowUpDate, setNextFollowUpDate] = useState<string | null>(null)
   const savedDue = item && followUpDate(item)
   const followedUp = item ? followUpCount(item) : 0
+  const decisionNote = item?.decisionNote && <section className="follow-settings decision-note-section" aria-labelledby="saved-decision-note-title">
+    <h3 id="saved-decision-note-title">{t('Decision note')}</h3>
+    <p>{item.decisionNote}</p>
+  </section>
   const interview = details.interview && (initial.status === 'Interview' || details.interview !== initial.interview)
     ? details.interview : emptyInterview
   const postingLink = webLink(item?.postingUrl)
@@ -153,6 +157,7 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
             {item.interviewDone && <p>{t('Interview marked as done.')}</p>}
             {item.interview ? <InterviewSummary interview={item.interview} /> : !item.interviewDone && <p>{t('No interview date scheduled yet.')}</p>}
           </section>}
+          {item.status === 'Interview' && decisionNote}
           {Boolean(item.pastInterviews?.length) && <section className="follow-settings" aria-labelledby="past-interviews-title">
             <h3 id="past-interviews-title"><CalendarClock size={17} /> {t('Previous interviews')}</h3>
             <div className="past-interviews">
@@ -182,6 +187,7 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
               </dl>}
             </div>
           </section>}
+          {item.status !== 'Interview' && decisionNote}
           {item.status !== 'Interested' && item.status !== 'Interview' && reminder}
           {item.notes && <dl><dt>{t('Notes')}</dt><dd>{item.notes}</dd></dl>}
           {history}
@@ -251,6 +257,9 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
               <InterviewFields interview={interview} onChange={value => update('interview', value)} />
             </section>}
           </>}
+          {(details.status === 'Awaiting decision' || item?.decisionNote) && <label>{t('Decision note (optional)')}
+            <textarea rows={3} maxLength={500} value={details.decisionNote ?? ''} onChange={e => update('decisionNote', e.target.value)} />
+          </label>}
           <label>{t('Notes')}<textarea rows={3} maxLength={8000} value={details.notes} onChange={e => update('notes', e.target.value)} placeholder={registeringInterest ? t('Anything you want to remember about this opportunity…') : t('Contact details, next steps, or anything to remember…')} /></label>
           {history}
           {(saveError || error) && <p role="alert" className="error">{t(saveError || error)}</p>}

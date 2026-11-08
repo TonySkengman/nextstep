@@ -2,16 +2,17 @@ import { ThemeToggle } from './ThemeToggle'
 import { LanguageProvider, LanguageSelect, useLanguage } from './language'
 import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowDownRight, ArrowUpRight, BriefcaseBusiness, CalendarDays, CalendarClock, Check, CircleCheck, Columns3, Compass, Inbox, MapPin, Plus, Search, X } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, BriefcaseBusiness, CalendarDays, CalendarClock, Check, CircleCheck, Columns3, Compass, Inbox, MapPin, Pin, Plus, Search, X } from 'lucide-react'
 import { Account } from './Account'
 import type { AccountBoard, SavedApplication } from './supabase'
 import { ApplicationDialog } from './ApplicationDialog'
 import { Calendar } from './Calendar'
+import { DecisionDialog } from './DecisionDialog'
 import { InterviewDialog } from './InterviewDialog'
 import { Modal } from './Modal'
 import { OutcomeDialog } from './OutcomeDialog'
 import { OutcomeBadge } from './OutcomeBadge'
-import { addDays, archiveInterview, awaitingResponseDays, blankDetails, boardColumn, columns, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, outcomes, saveDetails } from './model'
+import { addDays, archiveInterview, awaitingDecisionDays, blankDetails, boardColumn, columns, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, normalizeColumnName, orderCard, outcomes, saveDetails, sortColumnCards } from './model'
 import type { Application, Column, Details, Kind, Status } from './model'
 import './style.css'
 
@@ -26,8 +27,9 @@ function loadBoardColumns(): Column[] {
     const current = localStorage.getItem(boardColumnsKey)
     const saved: unknown = JSON.parse(current ?? localStorage.getItem('nextstep:visible-columns:v1') ?? 'null')
     if (Array.isArray(saved)) {
-      const visible = columns.filter(column => saved.includes(column))
-      if (visible.length) return current || visible.includes('Awaiting response') ? visible : [...visible, 'Awaiting response']
+      const savedColumns = saved.filter((name): name is string => typeof name === 'string').map(normalizeColumnName)
+      const visible = columns.filter(column => savedColumns.includes(column))
+      if (visible.length) return current || visible.includes('Awaiting decision') ? visible : [...visible, 'Awaiting decision']
     }
   } catch {
     // Use the default layout if browser storage is unavailable.
@@ -48,7 +50,7 @@ function opportunityBadges(items: Application[], t: ReturnType<typeof useLanguag
 
 const colors: Record<Column, string> = {
   Interested: 'slate', Applied: 'blue', 'Follow-up': 'red',
-  'In Contact': 'violet', Interview: 'teal', 'Awaiting response': 'amber', Completed: 'green',
+  'In Contact': 'violet', Interview: 'teal', 'Awaiting decision': 'amber', Completed: 'green',
 }
 
 function loadWorkspace(cleanup = false): Workspace {
@@ -81,26 +83,41 @@ function loadWorkspace(cleanup = false): Workspace {
   return { items: [], exampleIds: [] }
 }
 
-function ApplicationCard({ item, today, onOpen, onComplete }: {
-  item: Application; today: string; onOpen: () => void; onComplete: () => void
+function dropBefore(lane: HTMLElement, pointerY: number, dragged: Application) {
+  const cards = lane.querySelectorAll<HTMLElement>('[data-card-id]')
+  for (const card of cards) {
+    if (card.dataset.cardId === dragged.id) continue
+    const pinned = card.hasAttribute('data-pinned')
+    if (dragged.pinned && !pinned) return card.dataset.cardId ?? null
+    if (!dragged.pinned && pinned) continue
+    const bounds = card.getBoundingClientRect()
+    if (pointerY < bounds.top + bounds.height / 2) return card.dataset.cardId ?? null
+  }
+  return null
+}
+
+function ApplicationCard({ item, today, onOpen, onComplete, onTogglePin, onDrag, onDragEnd, dropBefore }: {
+  item: Application; today: string; onOpen: () => void; onComplete: () => void; onTogglePin: () => void
+  onDrag: () => void; onDragEnd: () => void; dropBefore: boolean
 }) {
   const { t, formatDay } = useLanguage()
   const date = followUpDate(item)
   const due = boardColumn(item, today) === 'Follow-up'
   const followedUp = followUpCount(item)
-  const waitingDays = due ? null : awaitingResponseDays(item, today)
+  const waitingDays = due ? null : awaitingDecisionDays(item, today)
   const deadline = item.status === 'Interested' ? item.applicationDeadline ?? '' : ''
   const deadlineSoon = deadline >= today && deadline <= addDays(today, 3)
   const initials = item.company.split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase()
   const avatarColor = ['violet', 'teal', 'blue', 'amber', 'green'][item.company.charCodeAt(0) % 5]
-  return <article className={`application ${due ? 'application-due' : ''}`} draggable onDragStart={event => {
+  return <article className={`application ${due ? 'application-due' : ''}`} data-card-id={item.id}
+    data-pinned={item.pinned || undefined} data-drop-before={dropBefore || undefined} draggable onDragEnd={onDragEnd} onDragStart={event => {
+    onDrag()
     event.dataTransfer.setData(applicationDragType, item.id)
     event.dataTransfer.effectAllowed = 'move'
   }}>
     <button className="card-open" onClick={onOpen} aria-label={t('Open {company}, {position}', { company: item.company, position: item.position })}>
       <span className="card-top">
         <span className="company-line"><span className={`avatar tone-${avatarColor}`}>{initials}</span><span>{item.company}</span></span>
-        <ArrowUpRight className="card-arrow" size={16} />
       </span>
       <span className="position">{item.position}</span>
       <span className="card-tags">
@@ -117,9 +134,15 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
         waitingDays === 0 ? 'Waiting since today' : waitingDays === 1 ? 'Waiting 1 day' : 'Waiting {count} days',
         { count: waitingDays },
       )}</span>}
+      {item.status === 'Awaiting decision' && item.decisionNote && <span className="decision-note">{item.decisionNote}</span>}
       {item.status === 'Interview' && (item.interviewDone
         ? <span className="contact-date"><Check size={13} /> {t('Interview done')}</span>
         : item.interview && <span className="contact-date"><CalendarClock size={13} /> {t('Interview {date}', { date: formatDay(item.interview.date) })}{item.interview.time && ` · ${item.interview.time}`}</span>)}
+    </button>
+    <button type="button" className="icon-button card-pin" aria-pressed={Boolean(item.pinned)}
+      aria-label={t('Pin opportunity')} title={t(item.pinned ? 'Unpin opportunity' : 'Pin opportunity')}
+      onClick={onTogglePin}>
+      <Pin size={16} fill={item.pinned ? 'currentColor' : 'none'} aria-hidden="true" />
     </button>
     {date && item.status !== 'Completed' && <div className={`reminder ${due ? 'tone-red' : ''}`}>
       <div>
@@ -152,7 +175,9 @@ function App({ board, email, signOut, exitGuest }: {
   const [filter, setFilter] = useState<Filter>('All')
   const [boardColumns, setBoardColumns] = useState(loadBoardColumns)
   const [draftColumns, setDraftColumns] = useState<Column[] | null>(null)
-  const [editor, setEditor] = useState<{ item: Application; status?: Status; finishInterview?: boolean } | { status: Status } | { draft: Details } | 'pickCompleted' | 'pickInterview' | 'pickAwaitingResponse' | null>(null)
+  const draggedCard = useRef<Application | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ column: Column; beforeId: string | null } | null>(null)
+  const [editor, setEditor] = useState<{ item: Application; status?: Status; finishInterview?: boolean; decisionFollowUpDate?: string; boardOrder?: Details['boardOrder'] } | { status: Status } | { draft: Details } | 'pickCompleted' | 'pickInterview' | 'pickAwaitingDecision' | null>(null)
   const [interviewFollowUpDate, setInterviewFollowUpDate] = useState<string | null>(null)
   const [followUpPrompt, setFollowUpPrompt] = useState<Application | null>(null)
   const [promptDate, setPromptDate] = useState<string | null>(null)
@@ -280,6 +305,18 @@ function App({ board, email, signOut, exitGuest }: {
     return item
   }
 
+  async function togglePin(id: string) {
+    const latest = loadLatest()
+    const current = latest.items.find(item => item.id === id)
+    if (!current) {
+      setNotice('This application was removed in another tab.')
+      return
+    }
+    const updated = { ...current, pinned: !current.pinned }
+    const items = latest.items.map(item => item.id === id ? updated : item)
+    await persist({ ...latest, items }, updated.pinned ? 'Opportunity pinned.' : 'Opportunity unpinned.', updated, id)
+  }
+
   async function markApplied(item: Application) {
     const applied = await save({ ...item, status: 'Applied', contactDate: item.contactDate || localDay() }, item)
     if (applied && !followUpDate(applied)) {
@@ -374,6 +411,11 @@ function App({ board, email, signOut, exitGuest }: {
     }
   }
 
+  function moveToAwaitingDecision(item: Application, decisionFollowUpDate?: string, boardOrder?: Details['boardOrder']) {
+    setSaveError('')
+    setEditor({ item, status: 'Awaiting decision', decisionFollowUpDate, boardOrder })
+  }
+
   function saveBoardColumns(visible: Column[]) {
     setBoardColumns(visible)
     setDraftColumns(null)
@@ -389,7 +431,7 @@ function App({ board, email, signOut, exitGuest }: {
   const activeItems = items.filter(isActiveApplication)
   const pickerItems = activeItems.filter(item => {
     if (editor === 'pickInterview') return !item.interviewDone && !item.interview?.date
-    if (editor === 'pickAwaitingResponse') return item.status !== 'Awaiting response'
+    if (editor === 'pickAwaitingDecision') return item.status !== 'Awaiting decision'
     return true
   })
   const dueItems = items.filter(item => boardColumn(item, today) === 'Follow-up')
@@ -490,45 +532,69 @@ function App({ board, email, signOut, exitGuest }: {
         <div className="board-scroll" role="region" aria-label={t('Kanban board')} tabIndex={0}>
           <div className="board" style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(175px, ${visibleColumns.length === 1 ? '280px' : '1fr'}))` }}>
             {visibleColumns.map(column => {
-              const cards = matching.filter(item => boardColumn(item, today) === column)
-              if (column === 'Follow-up') cards.sort((a, b) => (followUpDate(a) ?? '').localeCompare(followUpDate(b) ?? ''))
-              if (column === 'Interested') cards.sort((a, b) => {
-                const aDeadline = a.applicationDeadline || '9999-12-31'
-                const bDeadline = b.applicationDeadline || '9999-12-31'
-                return Number(aDeadline < today) - Number(bDeadline < today) || aDeadline.localeCompare(bDeadline)
-              })
+              const cards = sortColumnCards(matching.filter(item => boardColumn(item, today) === column), column)
               const isStage = column !== 'Follow-up'
               return <section key={column} className={`lane lane-${colors[column]}`} aria-label={t(column)}
-                onDragOver={isStage ? event => {
+                onDragOver={event => {
+                  const item = draggedCard.current
+                  if (!item || (!isStage && boardColumn(item, today) !== column)) return
                   if (!event.dataTransfer.types.includes(applicationDragType)) return
                   event.preventDefault()
                   event.dataTransfer.dropEffect = 'move'
-                } : undefined}
-                onDrop={isStage ? event => {
+                  const beforeId = dropBefore(event.currentTarget, event.clientY, item)
+                  setDropTarget(current => current?.column === column && current.beforeId === beforeId ? current : { column, beforeId })
+                }}
+                onDragLeave={event => {
+                  if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+                  setDropTarget(current => current?.column === column ? null : current)
+                }}
+                onDrop={event => {
                   if (!event.dataTransfer.types.includes(applicationDragType)) return
                   event.preventDefault()
+                  setDropTarget(null)
                   const item = items.find(item => item.id === event.dataTransfer.getData(applicationDragType))
-                  if (!item) return
-                  if (column === 'Interview' || (column === 'Completed' && item.status !== column)) {
-                    setEditor({ item, status: column })
-                  } else if (item.status !== column) {
-                    void save({ ...item, status: column }, item)
+                  if (!item || (!isStage && boardColumn(item, today) !== column)) return
+                  const beforeId = dropBefore(event.currentTarget, event.clientY, item)
+                  if (boardColumn(item, today) === column) {
+                    const latest = loadLatest()
+                    const current = latest.items.find(card => card.id === item.id)
+                    if (!current || boardColumn(current, today) !== column) return
+                    const columnItems = latest.items.filter(card => boardColumn(card, today) === column)
+                    const updated = { ...current, boardOrder: orderCard(current, columnItems, column, beforeId) }
+                    const reordered = latest.items.map(card => card.id === item.id ? updated : card)
+                    void persist({ ...latest, items: reordered }, 'Opportunity reordered.', updated, item.id)
+                    return
                   }
-                } : undefined}>
+                  if (column === 'Follow-up' || item.status === column) return
+                  const columnItems = items.filter(card => boardColumn(card, today) === column)
+                  const boardOrder = orderCard(item, columnItems, column, beforeId)
+                  if (column === 'Interview' || column === 'Completed') {
+                    setSaveError('')
+                    setEditor({ item, status: column, boardOrder })
+                  } else if (column === 'Awaiting decision') {
+                    moveToAwaitingDecision(item, undefined, boardOrder)
+                  } else {
+                    void save({ ...item, status: column, boardOrder }, item)
+                  }
+                }}>
                 <header className="lane-header">
                   <h3><span className="lane-dot" />{t(column)}<span className="count">{cards.length}</span></h3>
                   {isStage && <button className="icon-button" aria-label={column === 'Interview' ? t('Add interview') : t('Add to {column}', { column: t(column) })} onClick={() => {
                     if (column === 'Interview') setEditor('pickInterview')
                     else if (column === 'Completed') setEditor('pickCompleted')
-                    else if (column === 'Awaiting response') {
+                    else if (column === 'Awaiting decision') {
                       setSaveError('')
-                      setEditor('pickAwaitingResponse')
+                      setEditor('pickAwaitingDecision')
                     }
                     else setEditor({ status: column })
                   }}><Plus size={16} /></button>}
                 </header>
-                <div className="lane-cards">
-                  {cards.map(item => <ApplicationCard key={item.id} item={item} today={today} onOpen={() => setEditor({ item })} onComplete={() => markDone(item)} />)}
+                <div className="lane-cards" data-drop-end={dropTarget?.column === column && dropTarget.beforeId === null || undefined}>
+                  {cards.map(item => <ApplicationCard key={item.id} item={item} today={today} onOpen={() => setEditor({ item })}
+                    onComplete={() => markDone(item)} onTogglePin={() => void togglePin(item.id)}
+                    onDrag={() => { draggedCard.current = item }}
+                    onDragEnd={() => { draggedCard.current = null; setDropTarget(null) }}
+                    dropBefore={dropTarget?.column === column && dropTarget.beforeId === item.id} />)}
                   {!cards.length && <div className="empty"><Inbox size={19} />{column === 'Follow-up' ? t('No reminders due') : t('No applications here')}</div>}
                 </div>
               </section>
@@ -583,24 +649,24 @@ function App({ board, email, signOut, exitGuest }: {
         <button type="button" className="secondary clear-board-button" disabled={clearing} onClick={clearBoard}>{clearing ? t('Clearing…') : t('Clear board')}</button>
       </footer>
     </Modal>}
-    {(editor === 'pickCompleted' || editor === 'pickInterview' || editor === 'pickAwaitingResponse') && <Modal titleId="application-picker-title" className="outcome-dialog" onClose={() => setEditor(null)}>
+    {(editor === 'pickCompleted' || editor === 'pickInterview' || editor === 'pickAwaitingDecision') && <Modal titleId="application-picker-title" className="outcome-dialog" onClose={() => setEditor(null)}>
       <header className="dialog-header"><h2 id="application-picker-title">{editor === 'pickInterview' ? t('Add interview') : t('Select an application')}</h2></header>
       <div className="dialog-body complete-picker">
         {editor === 'pickInterview' && pickerItems.length > 0 && <p>{t('Choose the application this interview is for.')}</p>}
+        {editor === 'pickAwaitingDecision' && pickerItems.length > 0 && <p>{t('Choose an application with a completed interview or assessment.')}</p>}
         {pickerItems.length ? <ul>
           {pickerItems.map(item => <li key={item.id}>
-            <button type="button" className="secondary" disabled={editor === 'pickAwaitingResponse' && Boolean(board && !rows)} onClick={() => {
+            <button type="button" className="secondary" disabled={editor === 'pickAwaitingDecision' && Boolean(board && !rows)} onClick={() => {
               setSaveError('')
-              if (editor === 'pickAwaitingResponse') void save({ ...item, status: 'Awaiting response' }, item)
+              if (editor === 'pickAwaitingDecision') moveToAwaitingDecision(item)
               else setEditor({ item, status: editor === 'pickInterview' ? 'Interview' : 'Completed' })
             }}>
               <span>{item.company} · {item.position}</span>
             </button>
           </li>)}
         </ul> : <p>{editor === 'pickInterview' ? t('No active applications without a scheduled interview.')
-          : editor === 'pickAwaitingResponse' ? t('No active applications to move to Awaiting response.')
+          : editor === 'pickAwaitingDecision' ? t('No active applications to move to Awaiting decision.')
           : t('No active applications to move to Completed.')}</p>}
-        {editor === 'pickAwaitingResponse' && saveError && <p className="error" role="alert">{t(saveError)}</p>}
       </div>
       <footer className="dialog-footer">
         <button type="button" className="secondary" onClick={() => setEditor(null)}>{t('Cancel')}</button>
@@ -610,15 +676,13 @@ function App({ board, email, signOut, exitGuest }: {
       ? <Modal titleId="finish-interview-title" className="outcome-dialog" onClose={() => { setEditor(null); setSaveError('') }}>
         <form onSubmit={event => {
           event.preventDefault()
-          if (interviewFollowUpDate) void save({
-            ...editor.item, status: 'Awaiting response', followUp: { mode: 'date', date: interviewFollowUpDate },
-          }, editor.item)
+          if (interviewFollowUpDate) moveToAwaitingDecision(editor.item, interviewFollowUpDate)
         }}>
           <header className="dialog-header"><h2 id="finish-interview-title">{t("What's next step after the interview?")}</h2></header>
           <div className="dialog-body complete-picker">
             {interviewFollowUpDate === null ? <ul>
               <li><button type="button" className="secondary" onClick={() => setInterviewFollowUpDate(addDays(today, 7))}>{t('Schedule a follow-up')}</button></li>
-              <li><button type="button" className="secondary" disabled={Boolean(board && !rows)} onClick={() => save({ ...editor.item, status: 'Awaiting response' }, editor.item)}>{t('Move to Awaiting response')}</button></li>
+              <li><button type="button" className="secondary" onClick={() => moveToAwaitingDecision(editor.item)}>{t('Move to Awaiting decision')}</button></li>
               <li><button type="button" className="secondary" onClick={() => setEditor({ ...editor, status: 'Interview' })}>{t('Schedule next interview')}</button></li>
               <li><button type="button" className="secondary" onClick={() => setEditor({ ...editor, status: 'Completed' })}>{t('Complete application')}</button></li>
             </ul> : <label>{t('Follow-up date')}
@@ -632,18 +696,30 @@ function App({ board, email, signOut, exitGuest }: {
               if (interviewFollowUpDate === null) setEditor({ item: editor.item })
               else setInterviewFollowUpDate(null)
             }}>{t('Back')}</button>
-            {interviewFollowUpDate !== null && <button type="submit" className="primary" disabled={Boolean(board && !rows)}>{t('Schedule follow-up')}</button>}
+            {interviewFollowUpDate !== null && <button type="submit" className="primary" disabled={Boolean(board && !rows)}>{t('Continue')}</button>}
           </footer>
         </form>
       </Modal>
+      : 'item' in editor && editor.status === 'Awaiting decision'
+      ? <DecisionDialog item={editor.item} saveError={saveError} busy={Boolean(board && !rows)}
+          onClose={() => { setEditor(null); setSaveError('') }}
+          onSave={note => save({
+            ...editor.item,
+            status: 'Awaiting decision',
+            decisionNote: note,
+            boardOrder: editor.boardOrder ?? editor.item.boardOrder,
+            followUp: editor.decisionFollowUpDate
+              ? { mode: 'date', date: editor.decisionFollowUpDate }
+              : editor.item.followUp,
+          }, editor.item)} />
       : 'item' in editor && editor.status === 'Completed'
       ? <OutcomeDialog item={editor.item} saveError={saveError} busy={Boolean(board && !rows)}
           onClose={() => { setEditor(null); setSaveError('') }}
-          onSave={outcome => save({ ...editor.item, status: 'Completed', outcome, interviewDone: editor.finishInterview || editor.item.interviewDone }, editor.item)} />
+          onSave={outcome => save({ ...editor.item, status: 'Completed', outcome, boardOrder: editor.boardOrder ?? editor.item.boardOrder, interviewDone: editor.finishInterview || editor.item.interviewDone }, editor.item)} />
       : 'item' in editor && editor.status === 'Interview'
       ? <InterviewDialog item={editor.item} saveError={saveError} busy={Boolean(board && !rows)} nextRound={editor.finishInterview}
           onClose={() => { setEditor(editor.finishInterview ? { item: editor.item, finishInterview: true } : null); setSaveError('') }}
-          onSave={interview => save({ ...(editor.finishInterview ? archiveInterview(editor.item) : editor.item), status: 'Interview', interview }, editor.item)} />
+          onSave={interview => save({ ...(editor.finishInterview ? archiveInterview(editor.item) : editor.item), status: 'Interview', interview, boardOrder: editor.boardOrder ?? editor.item.boardOrder }, editor.item)} />
       : <ApplicationDialog key={'draft' in editor ? 'duplicate' : 'item' in editor ? editor.item.id : 'new'}
           saveError={saveError} busy={Boolean(board && !rows)}
           initial={'draft' in editor ? editor.draft : 'item' in editor ? { ...editor.item, status: editor.status ?? editor.item.status } : blankDetails(editor.status)}

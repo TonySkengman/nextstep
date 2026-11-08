@@ -1,23 +1,58 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { archiveInterview, awaitingResponseDays, blankDetails, boardColumn, calendarEvents, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, saveDetails } from './model.ts'
+import { archiveInterview, awaitingDecisionDays, blankDetails, boardColumn, calendarEvents, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, orderCard, saveDetails, sortColumnCards } from './model.ts'
+
+test('card placement survives a stage move and reload, with pinned cards first', () => {
+  const card = (id: string, pinned = false) => ({ ...blankDetails('Applied'), id, pinned, history: [] })
+  const first = card('a')
+  const last = card('b')
+  const pinned = card('c', true)
+  const destination = [last, pinned, first]
+  const incoming = { ...card('d'), status: 'In Contact' as const }
+  const moved = saveDetails({
+    ...incoming, status: 'Applied', boardOrder: orderCard(incoming, destination, 'Applied', last.id),
+  }, incoming)
+  const reloaded = normalizeApplication(JSON.parse(JSON.stringify(moved)))
+  assert.deepEqual(sortColumnCards([...destination, reloaded], 'Applied').map(item => item.id), ['c', 'a', 'd', 'b'])
+
+  const reordered = { ...last, boardOrder: orderCard(last, [...destination, reloaded], 'Applied', pinned.id) }
+  assert.deepEqual(sortColumnCards([first, reordered, pinned, reloaded], 'Applied').map(item => item.id), ['c', 'b', 'a', 'd'])
+})
 
 test('waiting time uses the latest interview or completed follow-up and ignores scheduled reminders', () => {
   const item = {
-    ...blankDetails('Awaiting response'),
+    ...blankDetails('Awaiting decision'),
     id: 'waiting',
     contactDate: '2026-10-20',
     pastInterviews: [{ date: '2026-10-24', time: '', location: '', notes: '' }],
     followUp: { mode: 'date' as const, date: '2026-11-01' },
     history: [
       { id: 'follow-up', time: new Date('2026-10-29T12:00:00').toISOString(), description: 'Completed follow-up due 26 Oct 2026' },
-      { id: 'stage', time: new Date('2026-10-27T12:00:00').toISOString(), description: 'Moved from Interview to Awaiting response' },
+      { id: 'stage', time: new Date('2026-10-27T12:00:00').toISOString(), description: 'Moved from Interview to Awaiting decision' },
     ],
   }
-  assert.equal(awaitingResponseDays(item, '2026-11-01'), 3)
-  assert.equal(awaitingResponseDays({ ...item, history: item.history.slice(1) }, '2026-11-01'), 8)
-  assert.equal(awaitingResponseDays({ ...item, history: item.history.slice(1), pastInterviews: [] }, '2026-11-01'), 5)
-  assert.equal(awaitingResponseDays({ ...item, status: 'In Contact' }, '2026-11-01'), null)
+  assert.equal(awaitingDecisionDays(item, '2026-11-01'), 3)
+  assert.equal(awaitingDecisionDays({ ...item, history: item.history.slice(1) }, '2026-11-01'), 8)
+  assert.equal(awaitingDecisionDays({ ...item, history: item.history.slice(1), pastInterviews: [] }, '2026-11-01'), 5)
+  assert.equal(awaitingDecisionDays({ ...item, status: 'In Contact' }, '2026-11-01'), null)
+})
+
+test('saved Awaiting response cards keep their stage and waiting time under the new name', () => {
+  const item = normalizeApplication({
+    ...blankDetails('Applied'),
+    id: 'legacy',
+    status: 'Awaiting response',
+    contactDate: '2026-10-20',
+    history: [{
+      id: 'stage',
+      time: new Date('2026-10-27T12:00:00').toISOString(),
+      description: 'Moved from Interview to Awaiting response',
+    }],
+  })
+
+  assert.equal(boardColumn(item, '2026-11-01'), 'Awaiting decision')
+  assert.equal(item.history[0]?.description, 'Moved from Interview to Awaiting decision')
+  assert.equal(awaitingDecisionDays(item, '2026-11-01'), 5)
 })
 
 test('an interval rolls across a month and surfaces once it is due', () => {
@@ -123,16 +158,25 @@ test('interview next steps preserve previous rounds and schedule only the next e
   assert.deepEqual([...calendarEvents([next]).keys()], [second.date])
 
   const contacted = saveDetails({
-    ...next, status: 'Awaiting response', followUp: { mode: 'date', date: '2026-11-25' },
+    ...next, status: 'Awaiting decision', decisionNote: '  They said they’d call Friday.  ',
+    followUp: { mode: 'date', date: '2026-11-25' },
   }, next)
   assert.deepEqual(contacted.pastInterviews, [first, second])
-  assert.equal(boardColumn(contacted, '2026-11-24'), 'Awaiting response')
+  assert.equal(contacted.decisionNote, 'They said they’d call Friday.')
+  assert.equal(completeFollowUp(contacted).decisionNote, contacted.decisionNote)
+  assert.equal(boardColumn(contacted, '2026-11-24'), 'Awaiting decision')
   assert.equal(boardColumn(contacted, '2026-11-25'), 'Follow-up')
-  assert.equal(boardColumn(completeFollowUp(contacted), '2026-11-25'), 'Awaiting response')
+  assert.equal(boardColumn(completeFollowUp(contacted), '2026-11-25'), 'Awaiting decision')
+
+  const third = { ...second, date: '2026-11-26' }
+  const resumed = saveDetails({ ...contacted, status: 'Interview', interview: third }, contacted)
+  assert.equal(boardColumn(resumed, '2026-11-24'), 'Interview')
+  assert.deepEqual(resumed.pastInterviews, [first, second])
+  assert.equal(calendarEvents([resumed]).get(third.date)?.[0]?.kind, 'Interview')
 
   const legacy = normalizeApplication({ ...next, interviewDone: true })
   assert.deepEqual(legacy.pastInterviews, [first, second])
-  assert.equal(legacy.status, 'Awaiting response')
+  assert.equal(legacy.status, 'Awaiting decision')
 })
 
 test('moving an existing application to Interview saves its interview and keeps its application details', () => {
