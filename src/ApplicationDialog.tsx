@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { CalendarClock, Check, History, X } from 'lucide-react'
+import { Modal } from './Modal'
 import { addDays, followUpDate, formatDay, methods, statuses } from './model'
 import type { Application, Details } from './model'
+
+const emptyInterview = { date: '', time: '', location: '', notes: '' }
 
 type Props = {
   saveError?: string
@@ -16,20 +19,17 @@ type Props = {
 }
 
 export function ApplicationDialog({ saveError, busy, initial, item, onClose, onSave, onComplete, onDelete }: Props) {
-  const dialog = useRef<HTMLDialogElement>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [details, setDetails] = useState<Details>(initial)
   const [mode, setMode] = useState(initial.followUp?.mode ?? 'none')
   const [date, setDate] = useState(initial.followUp?.mode === 'date' ? initial.followUp.date : '')
   const [days, setDays] = useState(initial.followUp?.mode === 'interval' ? String(initial.followUp.days) : '7')
   const [error, setError] = useState('')
   const savedDue = item && followUpDate(item)
-  const hasEdits = JSON.stringify(details) !== JSON.stringify(initial) || mode !== (initial.followUp?.mode ?? 'none')
+  const interview = details.interview ?? emptyInterview
+  const hasEdits = JSON.stringify(details) !== JSON.stringify(item ?? initial) || mode !== (initial.followUp?.mode ?? 'none')
     || (mode === 'date' && date !== (initial.followUp?.mode === 'date' ? initial.followUp.date : ''))
     || (mode === 'interval' && days !== String(initial.followUp?.mode === 'interval' ? initial.followUp.days : 7))
-
-  useEffect(() => {
-    dialog.current?.showModal()
-  }, [])
 
   function update<K extends keyof Details>(key: K, value: Details[K]) {
     setDetails(previous => ({ ...previous, [key]: value }))
@@ -53,11 +53,13 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
     const followUp = mode === 'date' ? { mode, date } as const
       : mode === 'interval' ? { mode, days: Number(days) } as const
       : null
-    onSave({ ...details, company: details.company.trim(), position: details.position.trim(), followUp })
+    onSave({ ...details, company: details.company.trim(), position: details.position.trim(), followUp,
+      interview: interview.date ? { ...interview, location: interview.location.trim(), notes: interview.notes.trim() } : undefined,
+    })
   }
 
-  return (
-    <dialog ref={dialog} onCancel={event => { event.preventDefault(); onClose() }} aria-labelledby="dialog-title">
+  return <>
+    <Modal titleId="dialog-title" onClose={onClose}>
       <form onSubmit={submit}>
         <header className="dialog-header">
           <div>
@@ -76,6 +78,15 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
             <label>Contact method<select value={details.method} onChange={e => update('method', e.target.value as Details['method'])}><option value="">Select a method</option>{methods.map(method => <option key={method}>{method}</option>)}</select></label>
           </div>
           <label>Notes<textarea rows={3} maxLength={8000} value={details.notes} onChange={e => update('notes', e.target.value)} placeholder="Contact details, next steps, or anything to remember…" /></label>
+          {(details.status === 'Interview' || details.interview) && <section className="follow-settings" aria-labelledby="interview-title">
+            <h3 id="interview-title"><CalendarClock size={17} /> Interview details</h3>
+            <div className="form-grid">
+              <label>Interview date<input type="date" min="1900-01-01" max="9999-12-31" required={Boolean(interview.time || interview.location.trim() || interview.notes.trim())} value={interview.date} onChange={e => update('interview', { ...interview, date: e.target.value })} /></label>
+              <label>Time<input type="time" value={interview.time} onChange={e => update('interview', { ...interview, time: e.target.value })} /></label>
+              <label>Location or meeting link<input maxLength={1000} value={interview.location} onChange={e => update('interview', { ...interview, location: e.target.value })} /></label>
+              <label>Interview notes<textarea rows={3} maxLength={8000} value={interview.notes} onChange={e => update('interview', { ...interview, notes: e.target.value })} /></label>
+            </div>
+          </section>}
           <section className="follow-settings" aria-labelledby="follow-title">
             <h3 id="follow-title"><CalendarClock size={17} /> Follow-up</h3>
             {savedDue && <div className="saved-reminder"><span>Scheduled for {formatDay(savedDue)}</span><button type="button" className="secondary" disabled={hasEdits || busy} title={hasEdits ? "Save your changes first" : undefined} onClick={() => item && onComplete(item)}><Check size={15} /> Mark done</button></div>}
@@ -92,15 +103,24 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
           {(saveError || error) && <p role="alert" className="error">{saveError || error}</p>}
         </div>
         <footer className="dialog-footer">
-          {item && <button type="button" className="secondary delete-application" disabled={busy} onClick={() => {
-            if (window.confirm(`Delete ${item.position} at ${item.company}? This also removes its reminder and history.`)) {
-              onDelete(item)
-            }
-          }}>Delete application</button>}
+          {item && <button type="button" className="secondary delete-application" disabled={busy} onClick={() => setConfirmDelete(true)}>Delete application</button>}
           <button type="button" className="secondary" onClick={onClose}>Cancel</button>
           <button type="submit" className="primary" disabled={busy}>{item ? 'Save changes' : 'Add application'}</button>
         </footer>
       </form>
-    </dialog>
-  )
+    </Modal>
+    {item && confirmDelete && <Modal titleId="delete-title" onClose={() => setConfirmDelete(false)}>
+      <header className="dialog-header"><h2 id="delete-title">Delete application?</h2></header>
+      <div className="dialog-body">
+        <p>Delete {item.position} at {item.company}? This also removes its reminder and history.</p>
+      </div>
+      <footer className="dialog-footer">
+        <button type="button" className="secondary" onClick={() => setConfirmDelete(false)}>Cancel</button>
+        <button type="button" className="secondary delete-confirm" disabled={busy} onClick={() => {
+          setConfirmDelete(false)
+          onDelete(item)
+        }}>Delete application</button>
+      </footer>
+    </Modal>}
+  </>
 }

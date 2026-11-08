@@ -6,10 +6,14 @@ A Kanban dashboard for tracking job and internship applications and seeing when 
 
 ## Track an opportunity
 
-1. Select **New application** or use the plus button in a column.
+1. Select **+** in the column where you want to add the opportunity.
 2. Add the company and position, and set the opportunity type, recruitment status, contact details, and notes.
 3. Schedule a follow-up for a specific date or a number of calendar days after the contact date.
 4. Open a card to edit its stage, reschedule its reminder, or view its history. Use the checkmark to complete a follow-up.
+
+Drag a card into a recruitment column to change its stage. Dropping it into **Interview** opens the form with its saved application details and fields for the interview date, time, location or meeting link, and notes. Save to apply the change. You can also open a card and set its recruitment status to **Interview**, or use **+** in **Interview** to add an opportunity at that stage.
+
+The dashboard calendar shows follow-ups and interviews for today and the next six days. Select **Open calendar** to browse by month, or select an event to open its application.
 
 Follow Up is calculated from the browser's local date. On the due date, a card appears there with its recruitment status visible. Completing the reminder or rescheduling it for a future date returns the card to its recruitment column. Completed applications stay in Completed. The app updates due reminders while the board is open and recalculates them when reopened.
 

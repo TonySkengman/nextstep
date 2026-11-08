@@ -1,11 +1,12 @@
 export const statuses = ['Interested', 'Applied', 'In Contact', 'Interview', 'Completed'] as const
-export const columns = ['Interested', 'Applied', 'Follow Up', 'In Contact', 'Interview', 'Completed'] as const
+export const columns = ['Applied', 'Interested', 'Follow Up', 'In Contact', 'Interview', 'Completed'] as const
 export const methods = ['Email', 'Company website', 'LinkedIn', 'Phone', 'In person', 'Other'] as const
 
 export type Status = typeof statuses[number]
 export type Column = typeof columns[number]
 export type Kind = 'Job' | 'Internship'
 export type FollowUp = { mode: 'date'; date: string } | { mode: 'interval'; days: number }
+export type Interview = { date: string; time: string; location: string; notes: string }
 export type Details = {
   company: string
   position: string
@@ -15,6 +16,7 @@ export type Details = {
   method: typeof methods[number] | ''
   notes: string
   followUp: FollowUp | null
+  interview?: Interview
 }
 export type Event = { id: string; time: string; description: string }
 export type Application = Details & { id: string; history: Event[] }
@@ -37,6 +39,35 @@ export function followUpDate(item: Pick<Details, 'contactDate' | 'followUp'>) {
   return item.contactDate ? addDays(item.contactDate, item.followUp.days) : null
 }
 
+export type CalendarEvent = {
+  item: Application
+  date: string
+  kind: 'Follow-up' | 'Interview'
+  time?: string
+}
+
+export function calendarEvents(items: Application[]) {
+  const days = new Map<string, CalendarEvent[]>()
+  function add(event: CalendarEvent) {
+    const events = days.get(event.date) ?? []
+    events.push(event)
+    days.set(event.date, events)
+  }
+
+  for (const item of items) {
+    if (item.status === 'Completed') continue
+    const due = followUpDate(item)
+    if (due) add({ item, date: due, kind: 'Follow-up' })
+    if (item.status === 'Interview' && item.interview?.date) {
+      add({ item, date: item.interview.date, kind: 'Interview', time: item.interview.time })
+    }
+  }
+  for (const events of days.values()) {
+    events.sort((a, b) => (a.time || '24:00').localeCompare(b.time || '24:00') || a.item.company.localeCompare(b.item.company))
+  }
+  return days
+}
+
 export function boardColumn(item: Details, today: string): Column {
   const due = followUpDate(item)
   return item.status !== 'Completed' && due && due <= today ? 'Follow Up' : item.status
@@ -49,7 +80,10 @@ export function withEvent(item: Application, description: string): Application {
 
 export function saveDetails(details: Details, previous?: Application): Application {
   if (!previous) {
-    const item = withEvent({ ...details, id: crypto.randomUUID(), history: [] }, `Added to ${details.status}`)
+    let item = withEvent({ ...details, id: crypto.randomUUID(), history: [] }, `Added to ${details.status}`)
+    if (details.interview) {
+      item = withEvent(item, `Scheduled interview for ${formatDay(details.interview.date)}`)
+    }
     const due = followUpDate(item)
     return due ? withEvent(item, `Scheduled follow-up for ${formatDay(due)}`) : item
   }
@@ -61,6 +95,11 @@ export function saveDetails(details: Details, previous?: Application): Applicati
   }
   if (details.status !== previous.status) {
     item = withEvent(item, `Moved from ${previous.status} to ${details.status}`)
+  }
+  if (details.interview && JSON.stringify(details.interview) !== JSON.stringify(previous.interview)) {
+    item = withEvent(item, `${previous.interview ? 'Updated' : 'Scheduled'} interview for ${formatDay(details.interview.date)}`)
+  } else if (!details.interview && previous.interview) {
+    item = withEvent(item, 'Removed interview details')
   }
   const nextDue = followUpDate(details)
   const previousDue = followUpDate(previous)

@@ -4,11 +4,13 @@ import { ArrowDownRight, ArrowUpRight, BriefcaseBusiness, CalendarDays, Calendar
 import { Account } from './Account'
 import type { AccountBoard, SavedApplication } from './supabase'
 import { ApplicationDialog } from './ApplicationDialog'
+import { Calendar } from './Calendar'
 import { blankDetails, boardColumn, columns, completeFollowUp, followUpDate, formatDay, localDay, saveDetails } from './model'
 import type { Application, Column, Details, Kind, Status } from './model'
 import './style.css'
 
 const storageKey = 'nextstep:applications:v1'
+const applicationDragType = 'application/x-nextstep-card'
 type Workspace = { items: Application[]; exampleIds: string[] }
 type Filter = Column | 'All' | 'Active'
 const colors: Record<Column, string> = {
@@ -53,7 +55,10 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
   const due = boardColumn(item, today) === 'Follow Up'
   const initials = item.company.split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase()
   const avatarColor = ['violet', 'teal', 'blue', 'amber', 'green'][item.company.charCodeAt(0) % 5]
-  return <article className={`application ${due ? 'application-due' : ''}`}>
+  return <article className={`application ${due ? 'application-due' : ''}`} draggable onDragStart={event => {
+    event.dataTransfer.setData(applicationDragType, item.id)
+    event.dataTransfer.effectAllowed = 'move'
+  }}>
     <button className="card-open" onClick={onOpen} aria-label={`Open ${item.company}, ${item.position}`}>
       <span className="card-top">
         <span className="company-line"><span className={`avatar tone-${avatarColor}`}>{initials}</span><span>{item.company}</span></span>
@@ -62,6 +67,7 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
       <span className="position">{item.position}</span>
       <span className={`tag ${item.kind === 'Job' ? 'job' : 'internship'}`}>{item.kind}</span>
       {item.contactDate && <span className="contact-date"><CalendarDays size={13} /> {formatDay(item.contactDate)}</span>}
+      {item.status === 'Interview' && item.interview && <span className="contact-date"><CalendarClock size={13} /> Interview {formatDay(item.interview.date)}{item.interview.time && ` · ${item.interview.time}`}</span>}
     </button>
     {date && item.status !== 'Completed' && <div className={`reminder ${due ? 'tone-amber' : ''}`}>
       <div>
@@ -86,7 +92,7 @@ function App({ board, email, signOut, exitGuest }: {
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<Kind | 'All'>('All')
   const [filter, setFilter] = useState<Filter>('All')
-  const [editor, setEditor] = useState<{ item: Application } | { status: Status } | null>(null)
+  const [editor, setEditor] = useState<{ item: Application; status?: Status } | { status: Status } | null>(null)
   const [notice, setNotice] = useState('')
   const [storageError, setStorageError] = useState(false)
 
@@ -239,26 +245,22 @@ function App({ board, email, signOut, exitGuest }: {
 
   return <>
     <header className="topbar">
-      <div className="brand"><span className="brand-icon"><Compass size={23} /></span>nextstep<span className="brand-dot">.</span></div>
+      <div className="brand-group">
+        <div className="brand"><span className="brand-icon"><Compass size={23} /></span>nextstep<span className="brand-dot">.</span></div>
+        <span className="brand-tagline">Take your next step</span>
+      </div>
       <div className="top-date"><CalendarDays size={16} />{new Date(`${today}T12:00:00`).toLocaleDateString('en', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
       {signOut && <button className="secondary" onClick={handleSignOut} title={email}>Sign out</button>}
       {exitGuest && <button className="secondary" onClick={exitGuest}>Sign in</button>}
     </header>
-    <main>
+    <main className="dashboard-page">
       {board && !rows ? <div role="status">
         {loadError ? <>Could not load your saved board. <button className="secondary" onClick={() => {
           setLoadError(false)
           setReload(value => value + 1)
         }}>Try again</button></> : 'Loading your saved board…'}
       </div> : <>
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow"><span className="live-dot" /> CAREER WORKSPACE</p>
-          <h1>Take your next step</h1>
-          <p>Keep your opportunities organized and your next steps clear.</p>
-        </div>
-        <button className="primary" onClick={() => setEditor({ status: 'Interested' })}><Plus size={19} /> New application</button>
-      </div>
+      <div className="dashboard-overview">
       <section className="summary-grid" aria-label="Application summary">
         {summaries.map(summary => <button className={`summary ${filter !== 'All' && filter === summary.filter ? 'selected' : ''}`} key={summary.title} aria-pressed={filter === summary.filter} onClick={() => setFilter(filter === summary.filter ? 'All' : summary.filter)}>
           <span className="summary-top"><span className={`metric-icon tone-${summary.tone}`}><summary.icon size={19} /></span><ArrowDownRight className="metric-arrow" size={16} /></span>
@@ -267,9 +269,11 @@ function App({ board, email, signOut, exitGuest }: {
           <span className="metric-caption">{summary.caption}</span>
         </button>)}
       </section>
+      <Calendar items={items} today={today} onOpen={item => setEditor({ item })} />
+      </div>
       <section className="board-panel" aria-labelledby="board-title">
         <div className="board-toolbar">
-          <div className="board-title"><span className="board-icon"><Columns3 size={19} /></span><div><h2 id="board-title">Application board</h2><p>{matching.length} {matching.length === 1 ? 'opportunity' : 'opportunities'}{filter !== 'All' && ` · ${filter}`}</p></div></div>
+          <div className="board-title"><span className="board-icon"><Columns3 size={19} /></span><div><h1 id="board-title">Application board</h1><p>{matching.length} {matching.length === 1 ? 'opportunity' : 'opportunities'}{filter !== 'All' && ` · ${filter}`}</p></div></div>
           <div className="filters">
             {filter !== 'All' && <button className="secondary" onClick={() => setFilter('All')}><X size={15} /> Clear stage filter</button>}
             <label className="search"><Search size={17} /><input type="search" aria-label="Search applications" placeholder="Search applications…" value={query} onChange={e => setQuery(e.target.value)} /></label>
@@ -281,7 +285,23 @@ function App({ board, email, signOut, exitGuest }: {
             {visibleColumns.map(column => {
               const cards = matching.filter(item => boardColumn(item, today) === column)
               if (column === 'Follow Up') cards.sort((a, b) => (followUpDate(a) ?? '').localeCompare(followUpDate(b) ?? ''))
-              return <section key={column} className={`lane lane-${colors[column]}`} aria-label={column}>
+              return <section key={column} className={`lane lane-${colors[column]}`} aria-label={column}
+                onDragOver={column !== 'Follow Up' ? event => {
+                  if (!event.dataTransfer.types.includes(applicationDragType)) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                } : undefined}
+                onDrop={column !== 'Follow Up' ? event => {
+                  if (!event.dataTransfer.types.includes(applicationDragType)) return
+                  event.preventDefault()
+                  const item = items.find(item => item.id === event.dataTransfer.getData(applicationDragType))
+                  if (!item) return
+                  if (column === 'Interview') {
+                    setEditor({ item, status: column })
+                  } else if (item.status !== column) {
+                    void save({ ...item, status: column }, item)
+                  }
+                } : undefined}>
                 <header className="lane-header">
                   <h3><span className="lane-dot" />{column}<span className="count">{cards.length}</span></h3>
                   {column !== 'Follow Up' && <button className="icon-button" aria-label={`Add to ${column}`} onClick={() => setEditor({ status: column })}><Plus size={16} /></button>}
@@ -299,7 +319,7 @@ function App({ board, email, signOut, exitGuest }: {
       {notice && <div className="toast" role="status"><Check size={16} />{notice}<button className="icon-button" aria-label="Dismiss message" onClick={() => setNotice('')}><X size={16} /></button></div>}
       {storageError && <p className="error" role="alert">Browser storage is unavailable. Changes may be lost when you close or reload this page.</p>}
     </main>
-    {editor && <ApplicationDialog saveError={saveError} busy={Boolean(board && !rows)} initial={'item' in editor ? editor.item : blankDetails(editor.status)} item={'item' in editor ? editor.item : undefined} onClose={() => { setEditor(null); setSaveError('') }} onSave={details => save(details, 'item' in editor ? editor.item : undefined)} onComplete={markDone} onDelete={deleteApplication} />}
+    {editor && <ApplicationDialog saveError={saveError} busy={Boolean(board && !rows)} initial={'item' in editor ? { ...editor.item, status: editor.status ?? editor.item.status } : blankDetails(editor.status)} item={'item' in editor ? editor.item : undefined} onClose={() => { setEditor(null); setSaveError('') }} onSave={details => save(details, 'item' in editor ? editor.item : undefined)} onComplete={markDone} onDelete={deleteApplication} />}
   </>
 }
 

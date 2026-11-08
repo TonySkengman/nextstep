@@ -77,9 +77,13 @@ export function Account({ children }: {
   }
 
   return <main className="account-page">
-    <p className="eyebrow">nextstep</p>
-    <h1>{mode === 'login' ? 'Sign in' : 'Create an account'}</h1>
-    <form onSubmit={submit} className="account-form">
+    <header className="account-intro">
+      <p className="eyebrow"><span className="live-dot" /> Career workspace</p>
+      <h1>Take your next step</h1>
+      <p>Keep your opportunities organized and your next steps clear.</p>
+    </header>
+    <form onSubmit={submit} className="account-form" aria-labelledby="account-title">
+      <h2 id="account-title">{mode === 'login' ? 'Sign in' : 'Create an account'}</h2>
       <label>Email<input type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} /></label>
       <label>Password<input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required minLength={mode === 'signup' ? 6 : undefined} value={password} onChange={event => setPassword(event.target.value)} /></label>
       <button className="primary" disabled={busy}>{mode === 'login' ? 'Sign in' : 'Create account'}</button>
