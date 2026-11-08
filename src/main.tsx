@@ -1,3 +1,4 @@
+import { LanguageProvider, LanguageSelect, useLanguage } from './language'
 import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ArrowDownRight, ArrowUpRight, BriefcaseBusiness, CalendarDays, CalendarClock, Check, CircleCheck, Columns3, Compass, Inbox, MapPin, Plus, Search, X } from 'lucide-react'
@@ -9,7 +10,7 @@ import { InterviewDialog } from './InterviewDialog'
 import { Modal } from './Modal'
 import { OutcomeDialog } from './OutcomeDialog'
 import { OutcomeBadge } from './OutcomeBadge'
-import { addDays, archiveInterview, blankDetails, boardColumn, columns, completeFollowUp, followUpCount, followUpDate, formatDay, localDay, normalizeApplication, outcomes, saveDetails } from './model'
+import { addDays, archiveInterview, blankDetails, boardColumn, columns, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, outcomes, saveDetails } from './model'
 import type { Application, Column, Details, Kind, Status } from './model'
 import './style.css'
 
@@ -37,10 +38,10 @@ function isActiveApplication(item: Application) {
   return item.status !== 'Interested' && item.status !== 'Completed'
 }
 
-function opportunityBadges(items: Application[]) {
+function opportunityBadges(items: Application[], t: ReturnType<typeof useLanguage>['t']) {
   return (['Job', 'Internship'] as const).map(kind => {
     const count = items.filter(item => item.kind === kind).length
-    return count > 0 && <span key={kind} className={`tag ${kind.toLowerCase()}`}>{count} {kind}{count === 1 ? '' : 's'}</span>
+    return count > 0 && <span key={kind} className={`tag ${kind.toLowerCase()}`}>{count} {t(count === 1 ? kind : `${kind}s`)}</span>
   })
 }
 
@@ -82,6 +83,7 @@ function loadWorkspace(cleanup = false): Workspace {
 function ApplicationCard({ item, today, onOpen, onComplete }: {
   item: Application; today: string; onOpen: () => void; onComplete: () => void
 }) {
+  const { t, formatDay } = useLanguage()
   const date = followUpDate(item)
   const due = boardColumn(item, today) === 'Follow-up'
   const followedUp = followUpCount(item)
@@ -93,32 +95,32 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
     event.dataTransfer.setData(applicationDragType, item.id)
     event.dataTransfer.effectAllowed = 'move'
   }}>
-    <button className="card-open" onClick={onOpen} aria-label={`Open ${item.company}, ${item.position}`}>
+    <button className="card-open" onClick={onOpen} aria-label={t('Open {company}, {position}', { company: item.company, position: item.position })}>
       <span className="card-top">
         <span className="company-line"><span className={`avatar tone-${avatarColor}`}>{initials}</span><span>{item.company}</span></span>
         <ArrowUpRight className="card-arrow" size={16} />
       </span>
       <span className="position">{item.position}</span>
       <span className="card-tags">
-        <span className={`tag ${item.kind === 'Job' ? 'job' : 'internship'}`}>{item.kind}</span>
+        <span className={`tag ${item.kind === 'Job' ? 'job' : 'internship'}`}>{t(item.kind)}</span>
         {item.status === 'Completed' && item.outcome && <OutcomeBadge outcome={item.outcome} />}
       </span>
       {deadline && <span className={`contact-date${deadlineSoon ? ' deadline-soon' : ''}`}>
-        <CalendarDays size={13} /> {deadline === today ? 'Apply today' : `Apply by ${formatDay(deadline)}`}
+        <CalendarDays size={13} /> {deadline === today ? t('Apply today') : t('Apply by {date}', { date: formatDay(deadline) })}
       </span>}
       {item.location && <span className="contact-date"><MapPin size={13} className="shrink-0" /><span className="card-location">{item.location}</span></span>}
       {item.contactDate && <span className="contact-date"><CalendarDays size={13} /> {formatDay(item.contactDate)}</span>}
-      {followedUp > 0 && <span className="contact-date"><Check size={13} /> Followed up {followedUp} {followedUp === 1 ? 'time' : 'times'}</span>}
+      {followedUp > 0 && <span className="contact-date"><Check size={13} /> {t(followedUp === 1 ? 'Followed up {count} time' : 'Followed up {count} times', { count: followedUp })}</span>}
       {item.status === 'Interview' && (item.interviewDone
-        ? <span className="contact-date"><Check size={13} /> Interview done</span>
-        : item.interview && <span className="contact-date"><CalendarClock size={13} /> Interview {formatDay(item.interview.date)}{item.interview.time && ` · ${item.interview.time}`}</span>)}
+        ? <span className="contact-date"><Check size={13} /> {t('Interview done')}</span>
+        : item.interview && <span className="contact-date"><CalendarClock size={13} /> {t('Interview {date}', { date: formatDay(item.interview.date) })}{item.interview.time && ` · ${item.interview.time}`}</span>)}
     </button>
     {date && item.status !== 'Completed' && <div className={`reminder ${due ? 'tone-red' : ''}`}>
       <div>
-        <div className="flex items-center gap-1.5"><CalendarClock size={14} /> {due ? (date === today ? 'Due today' : 'Overdue') : formatDay(date)}</div>
+        <div className="flex items-center gap-1.5"><CalendarClock size={14} /> {due ? (date === today ? t('Due today') : t('Overdue')) : formatDay(date)}</div>
         {due && <span className="reminder-date">{formatDay(date)}</span>}
       </div>
-      <button className="icon-button" aria-label={`Complete follow-up for ${item.company}`} title="Mark follow-up done" onClick={onComplete}><Check size={16} /></button>
+      <button className="icon-button" aria-label={t('Complete follow-up for {company}', { company: item.company })} title={t('Mark follow-up done')} onClick={onComplete}><Check size={16} /></button>
     </div>}
   </article>
 }
@@ -126,6 +128,7 @@ function ApplicationCard({ item, today, onOpen, onComplete }: {
 function App({ board, email, signOut, exitGuest }: {
   board?: AccountBoard; email?: string; signOut?: () => Promise<void>; exitGuest?: () => void
 }) {
+  const { t, formatDay, locale } = useLanguage()
   const [workspace, setWorkspace] = useState(() => board ? { items: [], exampleIds: [] } : loadWorkspace())
   const [rows, setRows] = useState<SavedApplication[] | null>(null)
   const [guestItems, setGuestItems] = useState(() => board ? loadWorkspace().items : [])
@@ -352,7 +355,7 @@ function App({ board, email, signOut, exitGuest }: {
       return
     }
     const updated = completeFollowUp(current, nextDate)
-    const message = nextDate ? `Next follow-up for ${item.company} scheduled for ${formatDay(nextDate)}.` : `Follow-up completed for ${item.company}.`
+    const message = nextDate ? t('Next follow-up for {company} scheduled for {date}.', { company: item.company, date: formatDay(nextDate) }) : t('Follow-up completed for {company}.', { company: item.company })
     const items = latest.items.map(entry => entry.id === item.id ? updated : entry)
     if (await persist({ ...latest, items }, message, updated, item.id)) setEditor(null)
   }
@@ -389,17 +392,17 @@ function App({ board, email, signOut, exitGuest }: {
     count: completedItems.filter(item => item.outcome === outcome).length,
   })).filter(({ count }) => count > 0)
   const summaries = [
-    { title: 'Total opportunities', value: items.length, caption: 'Jobs and internships', icon: BriefcaseBusiness, tone: 'violet', filter: 'All' },
-    { title: 'Active applications', value: activeItems.length, caption: 'Applications in progress', icon: ArrowUpRight, tone: 'blue', filter: 'Active' },
-    { title: 'Follow-ups due', value: dueItems.length, caption: dueItems.length ? 'Due today or overdue' : 'You’re all caught up', icon: CalendarClock, tone: 'red', filter: 'Follow-up' },
-    { title: 'Completed', value: completedItems.length, caption: 'Closed opportunities', icon: CircleCheck, tone: 'teal', filter: 'Completed' },
+    { title: t('Total opportunities'), value: items.length, caption: t('Jobs and internships'), icon: BriefcaseBusiness, tone: 'violet', filter: 'All' },
+    { title: t('Active applications'), value: activeItems.length, caption: t('Applications in progress'), icon: ArrowUpRight, tone: 'blue', filter: 'Active' },
+    { title: t('Follow-ups due'), value: dueItems.length, caption: dueItems.length ? t('Due today or overdue') : t('You’re all caught up'), icon: CalendarClock, tone: 'red', filter: 'Follow-up' },
+    { title: t('Completed'), value: completedItems.length, caption: t('Closed opportunities'), icon: CircleCheck, tone: 'teal', filter: 'Completed' },
   ] as const
   const summaryBadges = {
-    All: opportunityBadges(items),
-    Active: opportunityBadges(activeItems),
+    All: opportunityBadges(items, t),
+    Active: opportunityBadges(activeItems, t),
     'Follow-up': [
-      overdue > 0 && <span key="overdue" className="tag follow-up-overdue">{overdue} Overdue</span>,
-      dueToday > 0 && <span key="today" className="tag tone-red">{dueToday} Due today</span>,
+      overdue > 0 && <span key="overdue" className="tag follow-up-overdue">{overdue} {t('Overdue')}</span>,
+      dueToday > 0 && <span key="today" className="tag tone-red">{dueToday} {t('Due today')}</span>,
     ],
     Completed: completedOutcomes.map(({ outcome, count }) => <OutcomeBadge key={outcome} outcome={outcome} count={count} />),
   }
@@ -416,35 +419,40 @@ function App({ board, email, signOut, exitGuest }: {
     <header className="topbar">
       <div className="brand-group">
         <div className="brand"><span className="brand-icon"><Compass size={23} /></span>nextstep<span className="brand-dot">.</span></div>
-        <span className="brand-tagline">Take your next step</span>
+        <span className="brand-tagline">{t('Take your next step')}</span>
       </div>
-      <button type="button" className="top-date" aria-haspopup="dialog" title="Open calendar" disabled={Boolean(board && !rows)} onClick={() => setCalendarDay(today)}>
-        <CalendarDays size={16} />{new Date(`${today}T12:00:00`).toLocaleDateString('en', { weekday: 'short', day: 'numeric', month: 'short' })}
+      <button type="button" className="top-date" aria-haspopup="dialog" title={t('Open calendar')} disabled={Boolean(board && !rows)} onClick={() => setCalendarDay(today)}>
+        <CalendarDays size={16} />{new Date(`${today}T12:00:00`).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })}
       </button>
-      {signOut && <button className="secondary" disabled={importing} onClick={handleSignOut} title={email}>Sign out</button>}
-      {exitGuest && <button className="secondary" onClick={exitGuest}>Sign in</button>}
+      <div className="topbar-actions">
+        <LanguageSelect />
+        {signOut && <button className="secondary" disabled={importing} onClick={handleSignOut} title={email}>{t('Sign out')}</button>}
+        {exitGuest && <button className="secondary" onClick={exitGuest}>{t('Sign in')}</button>}
+      </div>
     </header>
     <main className="dashboard-page">
       {board && !rows ? <div role="status">
-        {loadError ? <>Could not load your saved board. <button className="secondary" onClick={() => {
+        {loadError ? <>{t('Could not load your saved board.')} <button className="secondary" onClick={() => {
           setLoadError(false)
           setReload(value => value + 1)
-        }}>Try again</button></> : 'Loading your saved board…'}
+        }}>{t('Try again')}</button></> : t('Loading your saved board…')}
       </div> : <>
       <div className="dashboard-overview">
       {board && !importDismissed && importable.length > 0 && <section className="guest-import" aria-labelledby="guest-import-title">
         <div>
-          <h2 id="guest-import-title">Import your guest board</h2>
-          <p>{importable.length} {importable.length === 1 ? 'opportunity is' : 'opportunities are'} saved in this browser and can be copied to your account.</p>
-          {importError && <p className="error" role="alert">{importError}</p>}
+          <h2 id="guest-import-title">{t('Import your guest board')}</h2>
+          <p>{t(importable.length === 1
+            ? '{count} opportunity is saved in this browser and can be copied to your account.'
+            : '{count} opportunities are saved in this browser and can be copied to your account.', { count: importable.length })}</p>
+          {importError && <p className="error" role="alert">{t(importError)}</p>}
         </div>
         <div className="guest-import-actions">
-          <button type="button" className="secondary" disabled={importing} onClick={() => setImportDismissed(true)}>Not now</button>
-          <button type="button" className="primary" disabled={importing} onClick={importGuestBoard}>{importing ? 'Importing…' : 'Import applications'}</button>
+          <button type="button" className="secondary" disabled={importing} onClick={() => setImportDismissed(true)}>{t('Not now')}</button>
+          <button type="button" className="primary" disabled={importing} onClick={importGuestBoard}>{importing ? t('Importing…') : t('Import applications')}</button>
         </div>
       </section>}
-      <section className="summary-grid" aria-label="Application summary">
-        {summaries.map(summary => <button className={`summary ${filter !== 'All' && filter === summary.filter ? 'selected' : ''}`} key={summary.title} aria-pressed={filter === summary.filter} onClick={() => setFilter(filter === summary.filter ? 'All' : summary.filter)}>
+      <section className="summary-grid" aria-label={t('Application summary')}>
+        {summaries.map(summary => <button className={`summary ${filter !== 'All' && filter === summary.filter ? 'selected' : ''}`} key={summary.filter} aria-pressed={filter === summary.filter} onClick={() => setFilter(filter === summary.filter ? 'All' : summary.filter)}>
           <span className="summary-top"><span className={`metric-icon tone-${summary.tone}`}><summary.icon size={19} /></span><ArrowDownRight className="metric-arrow" size={16} /></span>
           <span className="metric-value">{summary.value}</span>
           <span className="metric-title">{summary.title}</span>
@@ -453,19 +461,23 @@ function App({ board, email, signOut, exitGuest }: {
             <span className="metric-badges">{summaryBadges[summary.filter]}</span>}
         </button>)}
       </section>
-      <Calendar items={items} today={today} selected={calendarDay} setSelected={setCalendarDay} onOpen={item => setEditor({ item })} />
+      <Calendar items={items} today={today} selected={calendarDay} setSelected={setCalendarDay} onOpen={item => setEditor({ item })} onSaveEvent={async (details, item, day) => {
+        if (!await save(details, item)) return false
+        setCalendarDay(day)
+        return true
+      }} />
       </div>
       <section className="board-panel" aria-labelledby="board-title">
         <div className="board-toolbar">
-          <div className="board-title"><span className="board-icon"><Columns3 size={19} /></span><div><h1 id="board-title">Application board</h1><p>{matching.length} {matching.length === 1 ? 'opportunity' : 'opportunities'}{filter !== 'All' && ` · ${filter}`}</p></div></div>
+          <div className="board-title"><span className="board-icon"><Columns3 size={19} /></span><div><h1 id="board-title">{t('Application board')}</h1><p>{matching.length} {matching.length === 1 ? t('opportunity') : t('opportunities')}{filter !== 'All' && ` · ${t(filter)}`}</p></div></div>
           <div className="filters">
-            <button type="button" className="secondary" aria-haspopup="dialog" onClick={() => setDraftColumns(boardColumns)}>Edit board</button>
-            {filter !== 'All' && <button className="secondary" onClick={() => setFilter('All')}><X size={15} /> Clear stage filter</button>}
-            <label className="search"><Search size={17} /><input type="search" aria-label="Search applications" placeholder="Search applications…" value={query} onChange={e => setQuery(e.target.value)} /></label>
-            <select aria-label="Opportunity type filter" value={kind} onChange={e => setKind(e.target.value as typeof kind)}><option value="All">All types</option><option>Job</option><option>Internship</option></select>
+            <button type="button" className="secondary" aria-haspopup="dialog" onClick={() => setDraftColumns(boardColumns)}>{t('Edit board')}</button>
+            {filter !== 'All' && <button className="secondary" onClick={() => setFilter('All')}><X size={15} /> {t('Clear stage filter')}</button>}
+            <label className="search"><Search size={17} /><input type="search" aria-label={t('Search applications')} placeholder={t('Search applications…')} value={query} onChange={e => setQuery(e.target.value)} /></label>
+            <select aria-label={t('Opportunity type filter')} value={kind} onChange={e => setKind(e.target.value as typeof kind)}><option value="All">{t('All types')}</option><option value="Job">{t('Job')}</option><option value="Internship">{t('Internship')}</option></select>
           </div>
         </div>
-        <div className="board-scroll" role="region" aria-label="Kanban board" tabIndex={0}>
+        <div className="board-scroll" role="region" aria-label={t('Kanban board')} tabIndex={0}>
           <div className="board" style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(175px, ${visibleColumns.length === 1 ? '280px' : '1fr'}))` }}>
             {visibleColumns.map(column => {
               const cards = matching.filter(item => boardColumn(item, today) === column)
@@ -476,7 +488,7 @@ function App({ board, email, signOut, exitGuest }: {
                 return Number(aDeadline < today) - Number(bDeadline < today) || aDeadline.localeCompare(bDeadline)
               })
               const isStage = column !== 'Follow-up'
-              return <section key={column} className={`lane lane-${colors[column]}`} aria-label={column}
+              return <section key={column} className={`lane lane-${colors[column]}`} aria-label={t(column)}
                 onDragOver={isStage ? event => {
                   if (!event.dataTransfer.types.includes(applicationDragType)) return
                   event.preventDefault()
@@ -494,8 +506,8 @@ function App({ board, email, signOut, exitGuest }: {
                   }
                 } : undefined}>
                 <header className="lane-header">
-                  <h3><span className="lane-dot" />{column}<span className="count">{cards.length}</span></h3>
-                  {isStage && <button className="icon-button" aria-label={column === 'Interview' ? 'Add interview' : `Add to ${column}`} onClick={() => {
+                  <h3><span className="lane-dot" />{t(column)}<span className="count">{cards.length}</span></h3>
+                  {isStage && <button className="icon-button" aria-label={column === 'Interview' ? t('Add interview') : t('Add to {column}', { column: t(column) })} onClick={() => {
                     if (column === 'Interview') setEditor('pickInterview')
                     else if (column === 'Completed') setEditor('pickCompleted')
                     else setEditor({ status: column })
@@ -503,7 +515,7 @@ function App({ board, email, signOut, exitGuest }: {
                 </header>
                 <div className="lane-cards">
                   {cards.map(item => <ApplicationCard key={item.id} item={item} today={today} onOpen={() => setEditor({ item })} onComplete={() => markDone(item)} />)}
-                  {!cards.length && <div className="empty"><Inbox size={19} />{column === 'Follow-up' ? 'No reminders due' : 'No applications here'}</div>}
+                  {!cards.length && <div className="empty"><Inbox size={19} />{column === 'Follow-up' ? t('No reminders due') : t('No applications here')}</div>}
                 </div>
               </section>
             })}
@@ -511,22 +523,22 @@ function App({ board, email, signOut, exitGuest }: {
         </div>
       </section>
       </>}
-      {notice && <div className="toast" role="status"><Check size={16} />{notice}<button className="icon-button" aria-label="Dismiss message" onClick={() => setNotice('')}><X size={16} /></button></div>}
-      {storageError && <p className="error" role="alert">Browser storage is unavailable. Changes may be lost when you close or reload this page.</p>}
+      {notice && <div className="toast" role="status"><Check size={16} />{t(notice)}<button className="icon-button" aria-label={t('Dismiss message')} onClick={() => setNotice('')}><X size={16} /></button></div>}
+      {storageError && <p className="error" role="alert">{t('Browser storage is unavailable. Changes may be lost when you close or reload this page.')}</p>}
     </main>
     {draftColumns && <Modal titleId="edit-board-title" className="outcome-dialog" onClose={() => setDraftColumns(null)}>
-      <header className="dialog-header"><h2 id="edit-board-title">Edit board</h2></header>
+      <header className="dialog-header"><h2 id="edit-board-title">{t('Edit board')}</h2></header>
       <div className="dialog-body">
-        <p>Choose which columns to show on your board. Keep at least one visible.</p>
+        <p>{t('Choose which columns to show on your board. Keep at least one visible.')}</p>
         <fieldset className="board-column-options">
-          <legend>Visible columns</legend>
+          <legend>{t('Visible columns')}</legend>
           {columns.map(column => {
             const checked = draftColumns.includes(column)
             return <label key={column}>
               <input type="checkbox" checked={checked} disabled={checked && draftColumns.length === 1} onChange={event => {
                 setDraftColumns(event.target.checked ? [...draftColumns, column] : draftColumns.filter(visible => visible !== column))
               }} />
-              {column}
+              {t(column)}
             </label>
           })}
         </fieldset>
@@ -536,28 +548,31 @@ function App({ board, email, signOut, exitGuest }: {
           setDraftColumns(null)
           setClearError('')
           setConfirmClear(true)
-        }}>Clear board</button>
-        <button type="button" className="secondary" onClick={() => setDraftColumns(null)}>Cancel</button>
-        <button type="button" className="primary" onClick={() => saveBoardColumns(draftColumns)}>Save layout</button>
+        }}>{t('Clear board')}</button>
+        <button type="button" className="secondary" onClick={() => setDraftColumns(null)}>{t('Cancel')}</button>
+        <button type="button" className="primary" onClick={() => saveBoardColumns(draftColumns)}>{t('Save layout')}</button>
       </footer>
     </Modal>}
     {confirmClear && <Modal titleId="clear-board-title" className="outcome-dialog" onClose={() => {
       if (!clearing) setConfirmClear(false)
     }}>
-      <header className="dialog-header"><h2 id="clear-board-title">Clear application board?</h2></header>
+      <header className="dialog-header"><h2 id="clear-board-title">{t('Clear application board?')}</h2></header>
       <div className="dialog-body">
-        <p>This permanently deletes all {items.length} {items.length === 1 ? 'application' : 'applications'} on your {board ? 'account board across devices' : 'guest board in this browser'}, including hidden cards, notes, and history.</p>
-        {clearError && <p className="error" role="alert">{clearError}</p>}
+        <p>{t('This permanently deletes all {count} {applications} on your {board}, including hidden cards, notes, and history.', {
+          count: items.length, applications: t(items.length === 1 ? 'application' : 'applications'),
+          board: t(board ? 'account board across devices' : 'guest board in this browser'),
+        })}</p>
+        {clearError && <p className="error" role="alert">{t(clearError)}</p>}
       </div>
       <footer className="dialog-footer">
-        <button type="button" className="secondary" disabled={clearing} onClick={() => setConfirmClear(false)}>Cancel</button>
-        <button type="button" className="secondary clear-board-button" disabled={clearing} onClick={clearBoard}>{clearing ? 'Clearing…' : 'Clear board'}</button>
+        <button type="button" className="secondary" disabled={clearing} onClick={() => setConfirmClear(false)}>{t('Cancel')}</button>
+        <button type="button" className="secondary clear-board-button" disabled={clearing} onClick={clearBoard}>{clearing ? t('Clearing…') : t('Clear board')}</button>
       </footer>
     </Modal>}
     {(editor === 'pickCompleted' || editor === 'pickInterview') && <Modal titleId="application-picker-title" className="outcome-dialog" onClose={() => setEditor(null)}>
-      <header className="dialog-header"><h2 id="application-picker-title">{editor === 'pickInterview' ? 'Add interview' : 'Select an application'}</h2></header>
+      <header className="dialog-header"><h2 id="application-picker-title">{editor === 'pickInterview' ? t('Add interview') : t('Select an application')}</h2></header>
       <div className="dialog-body complete-picker">
-        {editor === 'pickInterview' && pickerItems.length > 0 && <p>Choose the application this interview is for.</p>}
+        {editor === 'pickInterview' && pickerItems.length > 0 && <p>{t('Choose the application this interview is for.')}</p>}
         {pickerItems.length ? <ul>
           {pickerItems.map(item => <li key={item.id}>
             <button type="button" className="secondary" onClick={() => {
@@ -567,10 +582,10 @@ function App({ board, email, signOut, exitGuest }: {
               <span>{item.company} · {item.position}</span>
             </button>
           </li>)}
-        </ul> : <p>{editor === 'pickInterview' ? 'No active applications without a scheduled interview.' : 'No active applications to move to Completed.'}</p>}
+        </ul> : <p>{editor === 'pickInterview' ? t('No active applications without a scheduled interview.') : t('No active applications to move to Completed.')}</p>}
       </div>
       <footer className="dialog-footer">
-        <button type="button" className="secondary" onClick={() => setEditor(null)}>Cancel</button>
+        <button type="button" className="secondary" onClick={() => setEditor(null)}>{t('Cancel')}</button>
       </footer>
     </Modal>}
     {editor && typeof editor !== 'string' && ('item' in editor && editor.finishInterview && !editor.status
@@ -581,25 +596,25 @@ function App({ board, email, signOut, exitGuest }: {
             ...editor.item, status: 'Awaiting response', followUp: { mode: 'date', date: interviewFollowUpDate },
           }, editor.item)
         }}>
-          <header className="dialog-header"><h2 id="finish-interview-title">What's next step after the interview?</h2></header>
+          <header className="dialog-header"><h2 id="finish-interview-title">{t("What's next step after the interview?")}</h2></header>
           <div className="dialog-body complete-picker">
             {interviewFollowUpDate === null ? <ul>
-              <li><button type="button" className="secondary" onClick={() => setInterviewFollowUpDate(addDays(today, 7))}>Schedule a follow-up</button></li>
-              <li><button type="button" className="secondary" disabled={Boolean(board && !rows)} onClick={() => save({ ...editor.item, status: 'Awaiting response' }, editor.item)}>Move to Awaiting response</button></li>
-              <li><button type="button" className="secondary" onClick={() => setEditor({ ...editor, status: 'Interview' })}>Schedule next interview</button></li>
-              <li><button type="button" className="secondary" onClick={() => setEditor({ ...editor, status: 'Completed' })}>Complete application</button></li>
-            </ul> : <label>Follow-up date
+              <li><button type="button" className="secondary" onClick={() => setInterviewFollowUpDate(addDays(today, 7))}>{t('Schedule a follow-up')}</button></li>
+              <li><button type="button" className="secondary" disabled={Boolean(board && !rows)} onClick={() => save({ ...editor.item, status: 'Awaiting response' }, editor.item)}>{t('Move to Awaiting response')}</button></li>
+              <li><button type="button" className="secondary" onClick={() => setEditor({ ...editor, status: 'Interview' })}>{t('Schedule next interview')}</button></li>
+              <li><button type="button" className="secondary" onClick={() => setEditor({ ...editor, status: 'Completed' })}>{t('Complete application')}</button></li>
+            </ul> : <label>{t('Follow-up date')}
               <input type="date" required min={today} max="9999-12-31" value={interviewFollowUpDate} onChange={event => setInterviewFollowUpDate(event.target.value)} />
             </label>}
-            {saveError && <p className="error" role="alert">{saveError}</p>}
+            {saveError && <p className="error" role="alert">{t(saveError)}</p>}
           </div>
           <footer className="dialog-footer">
             <button type="button" className="secondary" onClick={() => {
               setSaveError('')
               if (interviewFollowUpDate === null) setEditor({ item: editor.item })
               else setInterviewFollowUpDate(null)
-            }}>Back</button>
-            {interviewFollowUpDate !== null && <button type="submit" className="primary" disabled={Boolean(board && !rows)}>Schedule follow-up</button>}
+            }}>{t('Back')}</button>
+            {interviewFollowUpDate !== null && <button type="submit" className="primary" disabled={Boolean(board && !rows)}>{t('Schedule follow-up')}</button>}
           </footer>
         </form>
       </Modal>
@@ -624,18 +639,18 @@ function App({ board, email, signOut, exitGuest }: {
         event.preventDefault()
         if (promptDate) void scheduleAppliedFollowUp(promptDate)
       }}>
-        <header className="dialog-header"><h2 id="applied-follow-up-title">When would you like to follow up?</h2></header>
+        <header className="dialog-header"><h2 id="applied-follow-up-title">{t('When would you like to follow up?')}</h2></header>
         <div className="dialog-body">
-          <p>{followUpPrompt.company} was marked as applied.</p>
-          {promptDate !== null && <label>Follow-up date<input type="date" required min={today} max="9999-12-31" value={promptDate} onChange={event => setPromptDate(event.target.value)} /></label>}
-          {saveError && <p className="error" role="alert">{saveError}</p>}
+          <p>{t('{company} was marked as applied.', { company: followUpPrompt.company })}</p>
+          {promptDate !== null && <label>{t('Follow-up date')}<input type="date" required min={today} max="9999-12-31" value={promptDate} onChange={event => setPromptDate(event.target.value)} /></label>}
+          {saveError && <p className="error" role="alert">{t(saveError)}</p>}
         </div>
         <footer className="dialog-footer">
-          <button type="button" className="secondary" onClick={() => { setFollowUpPrompt(null); setSaveError('') }}>Skip</button>
+          <button type="button" className="secondary" onClick={() => { setFollowUpPrompt(null); setSaveError('') }}>{t('Skip')}</button>
           {promptDate === null ? <>
-            <button type="button" className="secondary" onClick={() => setPromptDate(addDays(today, 7))}>Pick a date</button>
-            <button type="button" className="primary" disabled={Boolean(board && !rows)} onClick={() => scheduleAppliedFollowUp(addDays(today, 7))}>In 7 days</button>
-          </> : <button type="submit" className="primary" disabled={Boolean(board && !rows)}>Schedule</button>}
+            <button type="button" className="secondary" onClick={() => setPromptDate(addDays(today, 7))}>{t('Pick a date')}</button>
+            <button type="button" className="primary" disabled={Boolean(board && !rows)} onClick={() => scheduleAppliedFollowUp(addDays(today, 7))}>{t('In 7 days')}</button>
+          </> : <button type="submit" className="primary" disabled={Boolean(board && !rows)}>{t('Schedule')}</button>}
         </footer>
       </form>
     </Modal>}
@@ -643,5 +658,5 @@ function App({ board, email, signOut, exitGuest }: {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <Account>{(board, email, signOut, owner, exitGuest) => <App key={owner ?? 'local'} board={board} email={email} signOut={signOut} exitGuest={exitGuest} />}</Account>,
+  <LanguageProvider><Account>{(board, email, signOut, owner, exitGuest) => <App key={owner ?? 'local'} board={board} email={email} signOut={signOut} exitGuest={exitGuest} />}</Account></LanguageProvider>,
 )

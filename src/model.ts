@@ -177,8 +177,8 @@ export function completeFollowUp(item: Application, nextDate?: string) {
     : completed
 }
 
-export function formatDay(day: string) {
-  return new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric' })
+export function formatDay(day: string, locale = 'en') {
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' })
     .format(new Date(`${day}T12:00:00`))
 }
 
