@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { archiveInterview, awaitingDecisionDays, blankDetails, boardColumn, calendarEvents, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, orderCard, saveDetails, sortColumnCards } from './model.ts'
+import { archiveInterview, awaitingDecisionDays, blankDetails, boardColumn, calendarEvents, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, orderCard, sameApplication, saveDetails, sortColumnCards } from './model.ts'
+
+test('reloading a guest application does not look like a concurrent edit', () => {
+  const item = saveDetails({ ...blankDetails('Applied'), location: undefined })
+  const stored: typeof item = JSON.parse(JSON.stringify(item))
+  const { kind, ...rest } = stored
+  const reloaded = normalizeApplication({ ...rest, kind })
+
+  assert.equal(sameApplication(item, reloaded), true)
+  assert.equal(sameApplication(item, { ...reloaded, location: 'Västerås' }), false)
+})
 
 test('card placement survives a stage move and reload, with pinned cards first', () => {
   const card = (id: string, pinned = false) => ({ ...blankDetails('Applied'), id, pinned, history: [] })

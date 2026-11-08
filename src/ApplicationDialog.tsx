@@ -5,7 +5,7 @@ import { CalendarClock, Check, ExternalLink, History, Mail, Phone, X } from 'luc
 import { InterviewFields, emptyInterview, scheduledInterview } from './InterviewFields'
 import { Modal } from './Modal'
 import { OutcomeBadge } from './OutcomeBadge'
-import { addDays, followUpCount, followUpDate, localDay, methods, outcomes } from './model'
+import { addDays, boardColumn, followUpCount, followUpDate, localDay, methods, outcomes } from './model'
 import type { Application, Details, Interview } from './model'
 
 function InterviewSummary({ interview }: { interview: Interview }) {
@@ -54,8 +54,10 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
   const [date, setDate] = useState(initial.followUp?.mode === 'date' ? initial.followUp.date : '')
   const [days, setDays] = useState(initial.followUp?.mode === 'interval' ? String(initial.followUp.days) : '7')
   const [error, setError] = useState('')
-  const [nextFollowUpDate, setNextFollowUpDate] = useState<string | null>(null)
+  const [followUpForm, setFollowUpForm] = useState<{ action: 'schedule' | 'reschedule'; date: string } | null>(null)
+  const today = localDay()
   const savedDue = item && followUpDate(item)
+  const isFollowUpColumn = item && boardColumn(item, today) === 'Follow-up'
   const followedUp = item ? followUpCount(item) : 0
   const decisionNote = item?.decisionNote && <section className="follow-settings decision-note-section" aria-labelledby="saved-decision-note-title">
     <h3 id="saved-decision-note-title">{t('Decision note')}</h3>
@@ -81,21 +83,28 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
       <div>{savedDue ? t('Scheduled for {date}', { date: formatDay(savedDue) }) : t('No reminder scheduled')}</div>
       {followedUp > 0 && <div>{t(followedUp === 1 ? 'Followed up {count} time' : 'Followed up {count} times', { count: followedUp })}</div>}
     </div>
-    {nextFollowUpDate === null ? (savedDue || item.status !== 'Completed') &&
+    {followUpForm === null ? (savedDue || item.status !== 'Completed') &&
       <div className="follow-up-actions">
         {savedDue && <button type="button" className="secondary" disabled={busy} onClick={() => onComplete(item)}><Check size={15} /> {t('Mark done')}</button>}
-        {item.status !== 'Completed' && <button type="button" className="secondary" disabled={busy} onClick={() => setNextFollowUpDate(addDays(localDay(), 7))}>
+        {savedDue && <button type="button" className="secondary" disabled={busy} onClick={() => setFollowUpForm({ action: 'reschedule', date: savedDue < today ? today : savedDue })}>
+          {t('Reschedule')}
+        </button>}
+        {item.status !== 'Completed' && <button type="button" className="secondary" disabled={busy} onClick={() => setFollowUpForm({ action: 'schedule', date: addDays(today, 7) })}>
           {savedDue || followedUp > 0 ? t('Schedule another follow-up') : t('Schedule a follow-up')}
         </button>}
       </div> : <form className="next-follow-up" onSubmit={event => {
         event.preventDefault()
-        onComplete(item, nextFollowUpDate)
+        if (followUpForm.action === 'reschedule') {
+          onSave({ ...item, followUp: { mode: 'date', date: followUpForm.date } })
+        } else {
+          onComplete(item, followUpForm.date)
+        }
       }}>
-        {savedDue && <p>{t('This will mark the current follow-up as done and schedule the next one.')}</p>}
-        <label>{t('Next follow-up date')}<input type="date" required min={localDay()} max="9999-12-31" value={nextFollowUpDate} onChange={event => setNextFollowUpDate(event.target.value)} /></label>
+        {savedDue && followUpForm.action === 'schedule' && <p>{t('This will mark the current follow-up as done and schedule the next one.')}</p>}
+        <label>{t(followUpForm.action === 'reschedule' ? 'Follow-up date' : 'Next follow-up date')}<input type="date" required min={today} max="9999-12-31" value={followUpForm.date} onChange={event => setFollowUpForm({ ...followUpForm, date: event.target.value })} /></label>
         <div className="follow-up-actions">
-          <button type="button" className="secondary" onClick={() => setNextFollowUpDate(null)}>{t('Cancel')}</button>
-          <button type="submit" className="primary" disabled={busy}>{t('Schedule')}</button>
+          <button type="button" className="secondary" onClick={() => setFollowUpForm(null)}>{t('Cancel')}</button>
+          <button type="submit" className="primary" disabled={busy || (followUpForm.action === 'reschedule' && followUpForm.date === savedDue)}>{t(followUpForm.action === 'reschedule' ? 'Save changes' : 'Schedule')}</button>
         </div>
       </form>}
   </section>
@@ -188,7 +197,7 @@ export function ApplicationDialog({ saveError, busy, initial, item, onClose, onS
             </div>
           </section>}
           {item.status !== 'Interview' && decisionNote}
-          {item.status !== 'Interested' && item.status !== 'Interview' && reminder}
+          {(isFollowUpColumn || (item.status !== 'Interested' && item.status !== 'Interview')) && reminder}
           {item.notes && <dl><dt>{t('Notes')}</dt><dd>{item.notes}</dd></dl>}
           {history}
           {saveError && <p role="alert" className="error">{t(saveError)}</p>}

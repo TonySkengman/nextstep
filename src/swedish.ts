@@ -203,6 +203,7 @@ export const swedish: Readonly<Record<string, string>> = {
   "Reminder": "Påminnelse",
   "Removed follow-up": "Tog bort uppföljningen",
   "Removed interview details": "Tog bort intervjudetaljer",
+  "Reschedule": "Ändra datum",
   "Rescheduled follow-up for {date}": "Flyttade uppföljningen till {date}",
   "Save an opportunity": "Spara en möjlighet",
   "Duplicate opportunity": "Duplicera möjlighet",

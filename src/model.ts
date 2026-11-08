@@ -180,6 +180,14 @@ export function archiveInterview(item: Details): Details {
 
 const legacyWaitingStatus = 'Awaiting response'
 
+export function sameApplication(first: Application, second: Application) {
+  const serialize = (item: Application) => JSON.stringify(item, (_key, value: unknown) => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return value
+    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)))
+  })
+  return serialize(first) === serialize(second)
+}
+
 export function normalizeColumnName(name: string) {
   return name === legacyWaitingStatus ? 'Awaiting decision' : name
 }

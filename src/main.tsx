@@ -12,7 +12,7 @@ import { InterviewDialog } from './InterviewDialog'
 import { Modal } from './Modal'
 import { OutcomeDialog } from './OutcomeDialog'
 import { OutcomeBadge } from './OutcomeBadge'
-import { addDays, archiveInterview, awaitingDecisionDays, blankDetails, boardColumn, columns, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, normalizeColumnName, orderCard, outcomes, saveDetails, sortColumnCards } from './model'
+import { addDays, archiveInterview, awaitingDecisionDays, blankDetails, boardColumn, columns, completeFollowUp, followUpCount, followUpDate, localDay, normalizeApplication, normalizeColumnName, orderCard, outcomes, sameApplication, saveDetails, sortColumnCards } from './model'
 import type { Application, Column, Details, Kind, Status } from './model'
 import './style.css'
 
@@ -286,7 +286,7 @@ function App({ board, email, signOut, exitGuest }: {
       setNotice('This application was removed in another tab.')
       return
     }
-    if (previous && JSON.stringify(current) !== JSON.stringify(previous)) {
+    if (previous && current && !sameApplication(current, previous)) {
       setEditor(null)
       setFollowUpPrompt(null)
       setNotice('This application changed in another tab. Open it again to edit the latest version.')
@@ -351,7 +351,7 @@ function App({ board, email, signOut, exitGuest }: {
   async function deleteApplication(item: Application) {
     const latest = loadLatest()
     const current = latest.items.find(entry => entry.id === item.id)
-    if (!current || JSON.stringify(current) !== JSON.stringify(item)) {
+    if (!current || !sameApplication(current, item)) {
       setEditor(null)
       setNotice(current ? 'This application changed in another tab. Open it again to delete it.' : 'This application was removed in another tab.')
       return
